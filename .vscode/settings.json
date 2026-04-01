@@ -1,4 +1,10 @@
 {
     "snyk.advanced.autoSelectOrganization": true,
-    "markdown-pdf.convertOnSave": false
+    "markdown-pdf.convertOnSave": true,
+    "markdown-pdf.outputDirectory": "pdfs",
+    "markdown-pdf.outputDirectoryRelativePathFile": false,
+    "markdown-pdf.convertOnSaveExclude": [
+        "README.md",
+        "CLAUDE.md"
+    ]
 }

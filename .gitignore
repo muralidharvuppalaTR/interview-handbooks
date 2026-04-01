@@ -1,0 +1,24 @@
+# Generated PDFs (auto-generated from .md via markdown-pdf)
+pdfs/
+CLAUDE.pdf
+
+# Backup copies
+back/
+*- Copy*
+
+# VS Code / Editor
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.html
+~*
+
+# Node modules (if using any build tools)
+node_modules/

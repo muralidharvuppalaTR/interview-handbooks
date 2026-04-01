@@ -8,15 +8,16 @@ This is an **interview preparation handbook collection**, not a software project
 
 ## Structure
 
-- **Root directory**: Both `.md` handbooks and their exported `.pdf` versions live here side by side
-- **`back/`**: Backup copies of original PDFs
-- PDFs are generated from the `.md` files using the VS Code **Markdown PDF** extension (right-click > "Markdown PDF: Export (pdf)")
+- **`handbooks/`**: All `.md` handbook files live here
+- **`pdfs/`**: Auto-generated PDFs from the `.md` files (git-ignored)
+- PDFs are auto-generated on save via the VS Code **Markdown PDF** extension (`markdown-pdf.convertOnSave: true`)
 
 ## Handbooks
 
-| File prefix | Topic |
-|-------------|-------|
+| File | Topic |
+|------|-------|
 | `CSharp-DotNet-Interview-Handbook` | C#, .NET platform, CLR, async, LINQ, EF Core |
+| `CSharp-DotNet-Master-Handbook` | Deep-dive: CLR internals, request lifecycle, memory, advanced patterns |
 | `DotNet-Backend-Microservices-SystemDesign-Handbook` | Backend architecture, microservices, system design |
 | `Design-Patterns-Architecture-Cloud-Testing-Handbook` | Design patterns, cloud (Azure/AWS), testing strategies |
 | `Frontend-Angular-TypeScript-Handbook` | Angular, TypeScript, RxJS, frontend architecture |
@@ -33,7 +34,7 @@ Each handbook follows a consistent structure:
 
 ## Working with These Files
 
-- Edit the `.md` files directly (not the PDFs)
+- Edit the `.md` files in `handbooks/` directly (not the PDFs)
 - When adding new questions, follow the existing gate structure and Q&A format
-- After editing, re-export PDFs using the Markdown PDF extension to keep them in sync
-- Do not place `.md` files in a dot-prefixed folder (e.g., `.md/`) — the Markdown PDF extension cannot export from hidden directories
+- PDFs auto-generate into `pdfs/` on save (configured in `.vscode/settings.json`)
+- `README.md` and `CLAUDE.md` are excluded from PDF generation
