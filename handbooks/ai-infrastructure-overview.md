@@ -620,6 +620,53 @@ the basics are now caught automatically.
 
 ---
 
+## FAQ — Common Questions
+
+### Who reviews and who resolves? Is Copilot involved?
+
+**No — it is Claude end-to-end.** Claude reviews the PR and Claude resolves its own findings. Copilot is not part of this loop.
+
+```
+You create PR (via /pr-prep)
+     ↓
+claude-pr-review.yml triggers → Claude Opus 4.6 reviews the diff
+     ↓
+Claude posts structured review comments (F-1-1, F-1-2...)
+     ↓
+auto-resolve.yml triggers → Claude again (same model, NOT Copilot)
+     ↓
+Claude reads each [auto-fixable] finding → fixes → commits → pushes → resolves threads
+     ↓
+claude-pr-review.yml re-triggers on the new push (Round 2)
+     ↓
+Clean → done. New findings → auto-resolve runs again (max 3 cycles)
+```
+
+**Why Claude for both?** The findings use a structured format (`<!-- F-1-N -->` IDs, `[auto-fixable]`/`[needs-discussion]` tags, `REVIEW_METRICS` block) that the resolve skill understands. The reviewer and resolver must speak the same schema to coordinate across rounds. A different tool (Copilot, CodeRabbit, etc.) would not understand this format.
+
+**Why the git history mentions Copilot:** Earlier commits reference "Copilot review feedback" — those are from before this AI infrastructure was built, when Copilot was the PR reviewer. The current setup replaced Copilot review with Claude review + auto-resolve.
+
+### Can I use this with Copilot or other AI tools?
+
+The **rules** (`.claude/rules/`) and **AGENTS.md** are tool-agnostic — any AI agent can read them. The **hooks**, **skills**, and **CI workflows** are Claude Code-specific. To use with another tool, you would need to reimplement the skills and workflow files for that tool's format.
+
+### What if auto-resolve cannot fix a finding?
+
+After 2 failed attempts on the same finding, it is downgraded to `stuck` and skipped. After 3 total cycles, the loop exits and posts an "Auto-Resolve Exhausted" comment. The finding is flagged for human review — a developer must resolve it manually.
+
+### What is the difference between `/review` and `claude-pr-review.yml`?
+
+| | `/review` (local) | `claude-pr-review.yml` (CI) |
+|---|---|---|
+| **When** | Before PR is opened (you run it manually) | After PR is opened (automatic) |
+| **Scope** | Convention-level per-file checks | Systemic cross-file concerns, architecture |
+| **Modifies code** | No (reports only) | No (reports only, auto-resolve modifies) |
+| **Output** | Findings in terminal | Review comment on PR |
+
+Running `/review` locally first catches the easy issues. The CI review then focuses on deeper concerns. If both run on the same PR, the CI review detects the `REVIEW_METRICS` block and skips convention checks to avoid duplication.
+
+---
+
 ## Further Reading
 
 - [quickstart.md](quickstart.md) — 5-minute quick start
