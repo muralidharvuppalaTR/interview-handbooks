@@ -5,6 +5,14 @@
     "markdown-pdf.outputDirectoryRelativePathFile": false,
     "markdown-pdf.convertOnSaveExclude": [
         "README.md",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        // Matches all markdown files (.md) in any subdirectory of the .claude folder.
+        // This glob pattern is typically used in VS Code settings to:
+        // - Exclude files from search/file explorer
+        // - Apply specific editor settings to Claude-related documentation
+        // - Organize workspace file associations
+        // The ** wildcard represents any number of nested directories
+        // The *.md suffix targets only markdown files
+        ".claude/**/*.md"
     ]
 }
