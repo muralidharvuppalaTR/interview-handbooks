@@ -5,6 +5,19 @@ A step-by-step learning guide for setting up CI/CD with GitHub Actions on this r
 ## Table of Contents
 
 - [Learning Resources](#learning-resources)
+- [What is GitHub Actions?](#what-is-github-actions)
+- [Core Concepts](#core-concepts)
+  - [YAML Rules for GitHub Actions](#yaml-rules-for-github-actions)
+  - [CI vs CD](#ci-vs-cd)
+  - [Workflows](#workflows)
+  - [Events](#events)
+  - [Jobs](#jobs)
+  - [Steps](#steps)
+  - [Actions](#actions)
+  - [Runners](#runners)
+  - [Variables & Secrets](#variables--secrets)
+  - [Contexts](#contexts)
+  - [Expressions](#expressions)
 - [YAML Concepts — Read This Before You Write Any Workflow](#yaml-concepts--read-this-before-you-write-any-workflow)
 - [Step 1 — Understand the folder structure](#step-1--understand-the-folder-structure)
 - [Step 2 — Hello World workflow](#step-2--hello-world-workflow)
@@ -22,6 +35,7 @@ A step-by-step learning guide for setting up CI/CD with GitHub Actions on this r
 - [Step 14 — Matrix Builds](#step-14--matrix-builds)
 - [Step 15 — Reusable Workflows (Concept)](#step-15--reusable-workflows-concept)
 - [Step 16 — Deploy to Self-Hosted Runner](#step-16--deploy-to-self-hosted-runner)
+- [Step 17 — Permissions](#step-17--permissions)
 
 ---
 
@@ -39,6 +53,742 @@ Before you start, bookmark these links — you will refer to them throughout thi
 | [GitHub Actions Tutorial — TechWorld with Nana (YouTube)](https://www.youtube.com/watch?v=R8_veQiYBjI) | 1 hour beginner video — watch this first |
 
 **Suggested order:** Watch the video → read Understanding GitHub Actions → bookmark the Syntax Reference.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+## What is GitHub Actions?
+
+GitHub Actions is a CI/CD platform built into GitHub that lets you automate tasks triggered by events in your repo.
+
+**Key points:**
+- Automates build, test, and deployment — but it goes beyond DevOps
+- Can trigger on any repo event: push, pull request, issue created, label added, release published, schedule, and more
+- Workflows are YAML files stored in `.github/workflows/` — no external tool needed
+
+**Workflow templates:** GitHub analyses your repo and suggests starter workflows based on the language it detects (Node.js, .NET, Python, etc.).
+
+Template categories available in GitHub UI (repo → **Actions** tab → **New workflow**):
+
+| Category | Examples |
+|----------|---------|
+| CI | Node.js, .NET, Python, Java, Go |
+| Deployments | Azure, AWS, GCP, Kubernetes |
+| Automation | Label issues, close stale PRs, auto-assign |
+| Code Scanning | CodeQL, Trivy, Snyk |
+| Pages | Deploy static sites to GitHub Pages |
+
+> Templates are a starting point — you will customise them for your project.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+## Core Concepts
+
+Before writing any workflow, read through these definitions. Everything in GitHub Actions is built from these building blocks.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### YAML Rules for GitHub Actions
+
+GitHub Actions workflows are YAML files. YAML has strict rules — breaking any of these will silently fail or error out:
+
+| Rule | ✅ Correct | ❌ Wrong | What happens if wrong |
+|---|---|---|---|
+| Keys are lowercase | `steps:` | `Steps:` | Silently ignored — treated as missing |
+| Indentation uses spaces | 2 spaces | tabs | Workflow fails to parse |
+| Strings with special chars need quotes | `cron: '*/5 * * * *'` | `cron: */5 * * * *` | YAML parsing error |
+| Booleans are lowercase | `true` / `false` | `True` / `TRUE` | May be treated as string |
+| Lists use `-` | `- name: Step 1` | `name: Step 1` (no `-`) | Steps not recognized |
+| No duplicate keys | one `steps:` per job | two `steps:` in same job | Second silently overwrites first |
+| Case-sensitive values | `ubuntu-latest` | `Ubuntu-Latest` | Runner not found |
+| Hyphens in key names matter | `runs-on:` | `run-on:` | Unknown key — treated as missing |
+| No spaces around `=` in bash | `version=$(cmd)` | `version = $(cmd)` | Bash syntax error |
+
+> **Key takeaway:** When a workflow fails with "Required property is missing", first check for typos and uppercase letters — GitHub won't tell you that `Steps:` is wrong, it will just say `steps:` is missing.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### CI vs CD
+
+| | CI | CD |
+|--|----|----|
+| Full name | Continuous Integration | Continuous Deployment |
+| What it does | Build and test every push | Deploy after tests pass |
+| Goal | Catch bugs early | Ship faster with less manual work |
+| When it runs | On every push/PR | On every successful CI run |
+
+```
+CI (what we built in Steps 1–7):     CD (what Step 16 adds):
+──────────────────────────            ───────────────────────────────
+push code                             push code
+  → build ✅                            → build ✅
+  → test ✅                              → test ✅
+  → done                                 → deploy automatically ✅
+                                         → app is live
+```
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Workflows
+
+A workflow is the top-level automation unit. It is a YAML file stored in `.github/workflows/`. Every file in that folder is a separate workflow. GitHub scans this folder automatically on every push.
+
+A workflow answers four questions:
+
+```
+1. WHAT is this workflow called?     → name:
+2. WHEN should it run?               → on:
+3. WHERE should it run?              → jobs: > runs-on:
+4. WHAT should it do?                → steps:
+```
+
+One repo can have many workflows — a workflow per service (frontend, backend, AI), or per purpose (CI, deploy, security scan). They are independent and can run in parallel.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Events
+
+An event is what triggers a workflow to run. You declare it under `on:`.
+
+**The events you will use 90% of the time:**
+
+| Event | When it fires |
+|-------|--------------|
+| `push` | Someone pushed a commit to a branch |
+| `pull_request` | Someone opened or updated a PR |
+| `schedule` | Timer-based trigger (cron syntax) |
+| `workflow_dispatch` | Manual trigger — a button appears in the GitHub UI |
+| `workflow_call` | Called by another workflow (reusable workflows) |
+
+You can filter events further — for example, only trigger on pushes to `main`, or only when files in a specific folder change (`paths:`).
+
+---
+
+#### Schedule Trigger
+
+Run a workflow automatically at a fixed time — no push or manual action needed. GitHub acts as an alarm clock.
+
+```yaml
+on:
+  schedule:
+    - cron: "0 9 * * *"    # Every day at 9 AM UTC
+```
+
+**Cron format:**
+```
+┌─────────── Minute   (0-59)
+│  ┌────────── Hour   (0-23)
+│  │  ┌─────── Day    (1-31)
+│  │  │  ┌──── Month  (1-12)
+│  │  │  │  ┌─ Weekday(0-6, 0=Sunday)
+│  │  │  │  │
+*  *  *  *  *
+```
+
+**Common examples:**
+
+| Cron | Meaning |
+|---|---|
+| `0 9 * * *` | Every day at 9 AM |
+| `0 9 * * 1` | Every Monday at 9 AM |
+| `0 0 1 * *` | 1st of every month |
+| `*/30 * * * *` | Every 30 minutes |
+
+**How GitHub handles it internally:**
+```
+GitHub has a background service running 24/7
+        ↓
+Maintains a watch list of repos with schedule triggers
+        ↓
+At scheduled time → wakes up only for those repos
+        ↓
+Scans .github/workflows/ → runs matching workflow
+        ↓
+All other repos → completely ignored
+```
+
+**Watch list lifecycle:**
+
+| Action | What GitHub does |
+|---|---|
+| Push workflow with `schedule:` | ✅ Adds repo to watch list |
+| Push change to cron time | 🔄 Updates watch list |
+| Delete workflow file | ❌ Removes from watch list |
+| Disable workflow in GitHub UI | ⏸️ Pauses in watch list |
+
+**Important constraints:**
+```
+→ Scheduled runs can be delayed and may not start at the exact minute
+→ Scheduled workflows may be auto-disabled after prolonged repo inactivity
+→ Scheduled workflows are disabled in forks
+```
+
+> **Note:** All cron times are in **UTC**.
+
+**Push vs Schedule:**
+
+| | Push | Schedule |
+|---|---|---|
+| Who triggers? | You | GitHub |
+| Needs a repo activity event (push/PR)? | Yes | No — time-based |
+| Use case | Run tests on code change | Nightly scan, weekly report |
+
+**Use cases:** nightly security scans, weekly reports, monthly backups, health checks.
+
+**Hands-on practice for this repo:**
+
+Create `.github/workflows/scheduled-health-check.yml`:
+
+```yaml
+name: Scheduled Health Check
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"    # Every Monday 9 AM
+  workflow_dispatch:         # Also allow manual trigger for testing
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Check backend builds
+        run: |
+          cd invest-platform-api
+          dotnet restore
+          dotnet build -c Release
+          echo "✅ Backend build healthy"
+
+      - name: Report
+        run: |
+          echo "📅 Scheduled check completed on $(date)"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Triggered by: ${{ github.event_name }}"
+```
+
+This runs every Monday and verifies the backend still builds cleanly — useful to catch dependency or config drift without waiting for a PR.
+
+**Two-job variant — download build output to your local machine:**
+
+If you also want the compiled output to land on your machine after each scheduled check, split into two jobs:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Check backend builds
+        run: |
+          cd invest-platform-api
+          dotnet restore
+          dotnet build -c Release
+          echo "Backend build healthy"
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-publish-9.0.x
+          path: invest-platform-api/PayVest.API/bin/Release/
+
+  download-to-local:
+    runs-on: [self-hosted, windows]
+    needs: build
+    steps:
+      - name: Download build output
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-publish-9.0.x
+          path: ${{ env.USERPROFILE }}\payvest-api
+```
+
+> **Note — runner targeting and OS:** `runs-on: [self-hosted, windows]` selects only self-hosted runners that carry the `windows` label, so the Windows path (`%USERPROFILE%`) is guaranteed to be valid. If your self-hosted runner is Linux or macOS, use the equivalent path instead:
+>
+> ```yaml
+> # Linux / macOS variant
+> runs-on: [self-hosted, linux]
+> path: $HOME/payvest-api
+> ```
+
+**Why this works even though each job runs on a different machine:**
+
+When `upload-artifact` runs, it does **not** save the files to the runner machine — it uploads them to **GitHub's artifact storage** (GitHub's servers). When the job finishes and its machine shuts down, the artifact still exists on GitHub's servers.
+
+Job 2 then downloads from GitHub's servers onto your machine — it never touches Job 1's machine at all.
+
+```
+Job 1 (GitHub cloud)            GitHub Artifact Storage         Job 2 (your machine)
+────────────────────            ───────────────────────         ────────────────────
+build → upload-artifact  ──►   stores the zip file     ──►   download-artifact → your disk
+machine shuts down ✓            artifact survives ✓            files arrive ✓
+```
+
+Think of it like uploading a file to OneDrive from your laptop, then shutting your laptop down — the file is still on OneDrive and anyone can download it.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Jobs
+
+A job is a named unit of work inside a workflow. Jobs run on a machine (called a runner). One workflow can have multiple jobs.
+
+**Hierarchy — 3 levels only:**
+```
+Workflow        (Level 1 — the entire YAML file)
+  └── Job       (Level 2 — runs on its own machine)
+    └── Step    (Level 3 — deepest level, runs inside the job)
+```
+
+Think of it like a company:
+
+| Level | GitHub Actions | Company analogy |
+|---|---|---|
+| 1 | Workflow | Company |
+| 2 | Job | Department |
+| 3 | Step | Employee |
+
+**`run:` and `uses:` are NOT a 4th level** — they, and other keys like `with:`, `env:`, `if:`, and `shell:`, are all just properties of a step, like how a person has a name and a job title. Those are not separate people, just details of the same person.
+
+```yaml
+- name: Install       # ← Step starts at the `-` list item (Level 3); `name` is optional
+  run: npm install    # ← just tells the step WHAT to do — not a new level
+```
+
+**`runs-on` level rules:**
+
+| Level | Allowed? | Why |
+|---|---|---|
+| Workflow level | ❌ No | Too high — jobs need their own machine |
+| Job level | ✅ Mandatory | Each job declares its own runner |
+| Step level | ❌ No | Steps share the job's machine |
+
+**What happens if you skip a level?**
+
+```yaml
+# ❌ Missing runs-on and steps — workflow will fail GitHub Actions workflow validation
+missing-runs-on:
+  run: echo "hello"
+
+# ❌ Missing - before run: — steps must be a YAML list; workflow will fail
+missing-step-dash:
+  runs-on: ubuntu-latest
+  steps:
+    run: echo "hello"
+
+# ✅ Correct — name: is optional; the - list item marker is what matters
+correct-job:
+  runs-on: ubuntu-latest
+  steps:
+    - run: echo "hello"           # valid — name: is optional
+    - name: Named step            # also valid — name: is allowed but not required
+      run: echo "hello again"
+```
+
+| Missing | What happens | Error you'll see |
+|---|---|---|
+| `runs-on:` | Workflow fails — GitHub doesn't know which machine to use | `"Required property is missing: runs-on"` |
+| `steps:` | Workflow fails — there's nothing to execute | `"Required property is missing: steps"` |
+| `-` before `run:` | Workflow fails — `run:` must be inside a YAML list item (`-`); `name:` is optional | `"Unexpected value 'run'"` |
+
+There are **no defaults** — GitHub will not assume `ubuntu-latest` or create empty steps for you.
+
+**`name:` is optional — but be careful with empty values:**
+
+| Syntax | YAML parses as | Result |
+|---|---|---|
+| `- name: My Step` | string `"My Step"` | Shows "My Step" in logs ✅ |
+| `- run: echo "hi"` | no name key at all | GitHub auto-generates name from the command ✅ |
+| `- name: ""` | empty string | Valid — shows the `run:` command as name ✅ |
+| `- name:` | `null` | Parsed as null, not empty string — may cause validation issues ❌ |
+
+**Rule:** Either give a step a proper name or omit `name:` entirely. Don't leave it as `name:` with no value.
+
+**Real test from this repo:** In `scheduled-health-check.yml` we added two test jobs:
+- `New-job` — has `runs-on` + `steps` → ✅ passes
+- `New-Job2` — missing `runs-on` and `steps`, `run:` directly under job → ❌ fails with validation error
+
+**Each job runs on its own separate machine — steps inside share that machine:**
+```
+Job 1 (ubuntu-latest)        Job 2 (windows-latest)
+─────────────────────        ──────────────────────
+Step 1  ┐                    Step 1  ┐
+Step 2  ├── same machine      Step 2  ├── same machine
+Step 3  ┘                    Step 3  ┘
+        ↑                            ↑
+   completely separate machines from each other
+```
+
+> **Note:** This applies to GitHub-hosted runners (fresh VM per job). For self-hosted runners, jobs may run on the same physical machine and state can persist between jobs unless explicitly cleaned up.
+
+**Each job can use a different OS:**
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest    # Linux
+  test:
+    runs-on: windows-latest   # Windows
+  deploy:
+    runs-on: macos-latest     # Mac
+```
+
+**Key rules:**
+- Jobs run **in parallel by default** — they do not wait for each other
+- Add `needs: <job-id>` to make a job wait for another to finish first
+- Each job runs on its **own fresh machine** — files do not carry over between jobs
+- To pass files between jobs, upload an artifact in job 1 and download it in job 2
+
+**Example — parallel jobs:**
+```yaml
+jobs:
+  build:    # starts immediately
+  test:     # starts immediately (parallel with build)
+  deploy:   # must wait — use needs: [build, test]
+    needs: [build, test]
+```
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Steps
+
+Steps are the ordered list of tasks inside a job. They run **in order, top to bottom**, on the same machine.
+
+**Key rules:**
+- If one step fails, all remaining steps in that job are skipped (unless you add `continue-on-error: true`)
+- Each `-` under `steps:` is one step
+- A step is either `run:` (a shell command you write) or `uses:` (a pre-built action)
+
+```yaml
+steps:
+  - name: Install packages      # step 1
+    run: npm install
+
+  - name: Build                 # step 2 — only runs if step 1 passes
+    run: npm run build
+
+  - name: Test                  # step 3 — only runs if step 2 passes
+    run: npm test
+```
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Actions
+
+An action is a reusable step that someone has already built and published. Instead of writing 50 lines of shell script yourself, you reference a pre-built action with `uses:`.
+
+**The GitHub Actions Marketplace** is where actions are published — think of it as an app store for CI steps. Anyone can publish an action. The `actions/` prefix means GitHub themselves built and maintains it.
+
+**The ~5 actions you will use constantly:**
+
+| Action | What it does | Why not just `run:`? |
+|--------|-------------|----------------------|
+| `actions/checkout@v5` | Clones your repo onto the machine | Cloning requires auth tokens, handling submodules, etc. — complex to do manually |
+| `actions/setup-node@v5` | Installs Node.js | Installing Node correctly across OS versions is complex |
+| `actions/setup-python@v5` | Installs Python | Same reason |
+| `actions/setup-dotnet@v4` | Installs .NET SDK | Same reason |
+| `actions/upload-artifact@v4` | Saves build output | Complex file handling |
+
+**The pattern is always the same:**
+
+```
+actions/  ←  who made it (GitHub themselves)
+checkout  ←  what it does
+@v5       ←  which version
+```
+
+**Key rules:**
+- Always pin to a version (`@v5`) — never use an unpinned action
+- `actions/` prefix = GitHub-maintained; third-party publishers use their own org name
+- You can write your own actions (composite or Docker) when no existing action fits
+- Browse the [GitHub Marketplace](https://github.com/marketplace?type=actions) to find actions for your use case
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Runners
+
+A runner is the machine that executes your job. You choose it with `runs-on:`. There are two categories:
+
+#### GitHub-Hosted Runners
+
+GitHub creates a fresh VM for each job, runs your steps, then destroys it. You do nothing — no setup, no maintenance.
+
+**Available options:**
+
+| Label | OS | Use when |
+|---|---|---|
+| `ubuntu-latest` | Ubuntu Linux | Default — fast, free, most actions work here |
+| `ubuntu-22.04` | Ubuntu 22.04 | Pin to a specific version for stability |
+| `ubuntu-20.04` | Ubuntu 20.04 | Older projects, being deprecated |
+| `windows-latest` | Windows Server | App needs Windows APIs or `.exe` builds |
+| `windows-2022` | Windows Server 2022 | Pin to specific version |
+| `macos-latest` | macOS | iOS app builds, macOS-only tools |
+| `macos-14` | macOS Sonoma | Specific macOS version |
+
+**What you get:**
+- Fresh clean VM every run (no leftover state)
+- Pre-installed tools: Node, .NET, Python, Docker, Git, etc.
+- No setup required — just pick the label
+
+**Limitations:**
+- VM is destroyed after the job — files do not persist
+- Cannot reach your internal network or databases
+- `macos` runners cost more (charged against paid minutes)
+
+#### Self-Hosted Runners
+
+You register your own machine with GitHub. GitHub sends jobs to it instead of spinning up a VM. The machine can be anything — your laptop, a company server, an AWS EC2, or an Azure VM.
+
+```yaml
+runs-on: self-hosted                    # any available self-hosted runner
+runs-on: [self-hosted, Windows]         # only Windows self-hosted runners
+runs-on: [self-hosted, Linux]           # only Linux self-hosted runners
+```
+
+**What you get:**
+- Files persist between runs (deploy folder stays)
+- Access to your internal network, databases, secrets on the machine
+- Any OS, hardware, or software you need
+- Free — you pay for the machine, not GitHub
+
+**Limitations:**
+- You are responsible for keeping the machine online and the runner service running
+- Security risk if repo is public — anyone could trigger your runner
+- Must manage updates, disk space, and environment yourself
+
+#### GitHub-Hosted vs Self-Hosted — side by side
+
+| | GitHub-Hosted | Self-Hosted |
+|---|---|---|
+| **Setup** | None — pick a label | Register machine once |
+| **Machine** | GitHub's VM (destroyed after job) | Your machine (persists) |
+| **State after job** | Gone | Files stay |
+| **Internal network** | No | Yes |
+| **Cost** | Free (Linux/Windows), paid (macOS/large) | Free (you pay for hardware) |
+| **Availability** | Always | Only when machine is online |
+| **Maintenance** | GitHub handles it | You handle it |
+| **Best for** | Build, test, lint | Deploy to specific machine |
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Variables & Secrets
+
+#### What are environment variables?
+
+Values you define once and reuse across multiple steps — so you don't repeat the same string in many places.
+
+#### Variables vs Secrets
+
+- **Variables** — store non-sensitive config (version numbers, folder paths, server names, compiler flags). Values are visible in build logs.
+- **Secrets** — store sensitive data (API keys, passwords, tokens). Values are masked in logs. Use `${{ secrets.NAME }}` to reference them.
+
+> Rule: if it's safe to show in logs → variable. If it must stay hidden → secret.
+
+#### The 3 scopes
+
+| Scope | Where in the YAML file | Who can read it |
+|-------|----------------------|-----------------|
+| Workflow | `env:` at top of file (before `on:`) | Every job and step |
+| Job | `jobs.<job_id>.env:` | All steps in that job |
+| Step | `jobs.<job_id>.steps[*].env:` | That step only |
+
+#### Rule — where to put secrets vs non-secrets
+
+| Type | Where to put it | Example |
+|------|----------------|---------|
+| Non-sensitive config | Workflow or job level `env:` | version numbers, folder paths |
+| Secrets / tokens | Step level `env:` only | API keys, passwords, tokens |
+
+> Never put secrets at workflow level — always scope them to the step that needs them.
+
+#### How to access variables
+
+| Variable type | Syntax | Example |
+|--------------|--------|---------|
+| Workflow/job/step `env:` | `${{ env.VAR_NAME }}` | `${{ env.NODE_VERSION }}` |
+| Repo / org / environment config vars | `${{ vars.VAR_NAME }}` | `${{ vars.SERVER_NAME }}` |
+| Secrets | `${{ secrets.SECRET_NAME }}` | `${{ secrets.API_KEY }}` |
+
+#### Where to create variables in GitHub
+
+| Variable type | Location |
+|--------------|---------|
+| Repo variables | Repo → **Settings** → **Secrets and variables** → **Actions** → **Variables** tab |
+| Environment variables (dev/staging/prod) | Repo → **Settings** → **Environments** → select environment → **Variables** |
+| Org variables | Organization → **Settings** → **Secrets and variables** → **Actions** → **Variables** tab |
+
+**Limits:** 1,000 org variables · 500 per repo · 100 per environment · 256 KB total per workflow run
+
+**Repo vs environment variables:**
+- **Repo variables** — available to all workflows in the repo (global)
+- **Environment variables** — scoped to a specific deployment environment (dev / staging / prod); can require manual approval before a job runs in that environment
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Contexts
+
+A context is an object containing runtime information about the workflow run, runner, jobs, steps, inputs, secrets, and more. You read context data using expression syntax `${{ <context>.<property> }}`.
+
+**Key points:**
+- Available before and during a job (unlike shell env vars which exist only on the runner)
+- If you access a property that doesn't exist, it returns an empty string — not an error
+- Some context data comes from user input — treat it as untrusted (avoid injecting into `run:` directly)
+
+**Useful contexts:**
+
+| Context | What it contains |
+|---|---|
+| `github` | Run info — `ref`, `sha`, `actor`, `event_name`, `workflow`, `repository` |
+| `env` | Environment variables defined in workflow/job/step |
+| `vars` | Configuration variables set in GitHub UI |
+| `secrets` | Encrypted secrets set in GitHub UI |
+| `inputs` | Inputs passed to `workflow_dispatch` or reusable workflows |
+| `runner` | Info about the runner — `os`, `arch`, `temp`, `tool_cache` |
+| `steps` | Outputs and status of previous steps in the same job |
+| `needs` | Outputs from jobs this job depends on (via `needs:`) |
+| `matrix` | Current matrix combination values |
+
+**Example — run job only on main branch:**
+
+```yaml
+jobs:
+  deploy:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Branch is ${{ github.ref_name }}"
+```
+
+The `if:` uses the `github` context to check the branch before the job starts — if it's not `main`, the job is skipped entirely.
+
+**Debugging tip — dump a context to logs:**
+
+```yaml
+- name: Dump GitHub context
+  env:
+    GITHUB_CONTEXT: ${{ toJson(github) }}
+  run: echo "$GITHUB_CONTEXT"
+```
+
+**Why pass through `env:` instead of using `toJson()` directly in `run:`?**
+
+`${{ toJson(github) }}` produces a large JSON string with special characters (`"`, `{`, `}`, newlines). If injected directly into a shell command it breaks the shell syntax:
+
+```bash
+# What the shell sees if used directly in run: — broken
+echo {"repository":"tr/...","ref":"refs/heads/main",...}
+
+# What the shell sees when passed via env: — safe
+echo "$GITHUB_CONTEXT"   ← just prints a pre-set variable
+```
+
+GitHub sets the env var value safely before the shell starts — the shell never sees the raw JSON.
+
+`toJson()` converts the context object to a readable JSON string so you can inspect all available properties.
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+### Expressions
+
+Expressions let workflows compute values, read contexts, and call functions to make decisions and set variables dynamically.
+
+**Syntax:** `${{ <expression> }}`
+
+**Building blocks:**
+
+| Type | Examples |
+|---|---|
+| Literals | `'main'`, `42`, `true` |
+| Contexts | `github.ref`, `env.MY_VAR`, `steps.my_step.outputs.value` |
+| Functions | `success()`, `failure()`, `contains()`, `startsWith()`, `toJson()`, `fromJSON()` |
+| Operators | `==`, `!=`, `&&`, `\|\|`, `!`, `>`, `<` |
+
+**`${{ }}` rules:**
+- Required everywhere **except** job-level `if:` where it is optional
+- Best practice — always use `${{ }}` at both job and step level for consistency
+
+**Examples:**
+
+Set env var dynamically:
+```yaml
+env:
+  BUILD_DIR: ${{ github.ref == 'refs/heads/main' && 'dist/prod' || 'dist/dev' }}
+```
+If push is to `main` → `BUILD_DIR=dist/prod`, otherwise `dist/dev`. This is a ternary pattern: `condition && value_if_true || value_if_false`.
+
+Job runs only on PRs (job-level `if:`, `${{ }}` optional):
+```yaml
+jobs:
+  test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm test
+```
+
+Step runs only on main branch (step-level `if:`, `${{ }}` required):
+```yaml
+    steps:
+      - name: Upload artifacts for prod
+        if: ${{ github.ref == 'refs/heads/main' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-build
+          path: build/
+```
+
+Combine functions and contexts:
+```yaml
+if: ${{ success() && startsWith(github.ref, 'refs/tags/') }}
+```
+Runs only if previous steps succeeded AND the ref is a tag.
+
+**`fromJSON()` — convert string to array:**
+
+Expressions always return strings. When `runs-on` needs an **array** of labels (e.g. `[self-hosted, Windows]`), use `fromJSON()` to convert the JSON string into a real array:
+
+```yaml
+# Without fromJSON — broken for arrays
+runs-on: ${{ condition && '[self-hosted, Windows]' || 'ubuntu-latest' }}
+# GitHub sees '[self-hosted, Windows]' as ONE label name → runner not found
+
+# With fromJSON — correct
+runs-on: ${{ fromJSON(condition && '["self-hosted","Windows"]' || '"ubuntu-latest"') }}
+# GitHub sees ["self-hosted","Windows"] as TWO labels → matches runner correctly
+```
+
+Single string values like `ubuntu-latest` or `windows-latest` don't need `fromJSON` — but using it consistently means you can switch to a self-hosted array without changing the expression structure.
 
 [↑ Back to top](#table-of-contents)
 
@@ -271,6 +1021,8 @@ Multiple commands — use `|`:
     npm test
 ```
 
+> **What is `|`?** It is YAML's multi-line string syntax. Everything indented under `|` runs as one script, in order. You only need it when a step has more than one command — a single command does not need `|`.
+
 **Use `run:` when:** You know the exact command to run.
 
 [↑ Back to top](#table-of-contents)
@@ -284,19 +1036,7 @@ Multiple commands — use `|`:
   uses: actions/checkout@v5
 ```
 
-**How to think about it:** GitHub Actions has a marketplace — like an app store. Thousands of pre-built actions exist. Instead of writing 50 lines of code yourself, you just `uses:` someone else's action.
-
-**How do you know one exists?**
-
-You don't need to memorise them. There are only ~5 you'll use constantly:
-
-| Action | What it does | Why not just `run:`? |
-|--------|-------------|----------------------|
-| `actions/checkout@v5` | Clones your repo onto the machine | Cloning requires auth tokens, handling submodules, etc. — complex to do manually |
-| `actions/setup-node@v5` | Installs Node.js | Installing Node correctly across OS versions is complex |
-| `actions/setup-python@v5` | Installs Python | Same reason |
-| `actions/setup-dotnet@v4` | Installs .NET SDK | Same reason |
-| `actions/upload-artifact@v4` | Saves build output | Complex file handling |
+**How to think about it:** Instead of writing 50 lines of shell script yourself, you reference a pre-built action with `uses:`. The ~5 actions you will use constantly are listed in [Actions](#actions) under Core Concepts.
 
 **The pattern is always the same:**
 
@@ -305,6 +1045,8 @@ actions/  ←  who made it (GitHub themselves)
 checkout  ←  what it does
 @v5       ←  which version
 ```
+
+> For a full explanation of what Actions are, the Marketplace, and when to write your own, see [Actions](#actions) in Core Concepts above.
 
 [↑ Back to top](#table-of-contents)
 
@@ -350,18 +1092,7 @@ npm install react       ← could get any version (risky)
 
 ### `env:` — environment variables
 
-```yaml
-- name: Create .npmrc
-  env:
-    JFROG_USERNAME: ${{ secrets.CTT_SRE_JFROG_SERVICE_ACCOUNT }}
-  run: echo $JFROG_USERNAME
-```
-
-**What it is:** Variables available to that step.
-
-**Why you need it:** To pass secrets or config values into your commands without hardcoding them.
-
-**`${{ secrets.MY_SECRET }}`** — GitHub replaces this with the actual secret value at runtime. Never hardcode secrets in workflow files.
+See [Step 13 — Environment Variables](#step-13--environment-variables) for full details on `env:`, scopes, and how to pass secrets.
 
 [↑ Back to top](#table-of-contents)
 
@@ -966,24 +1697,7 @@ Start with Step 2, get your first green tick, then add each workflow one at a ti
 
 CI stops at testing. CD goes one step further — it **automatically deploys** your app after tests pass.
 
-```
-CI (what we built so far):        CD (what Step 16 adds):
-──────────────────────────        ───────────────────────────────
-push code                         push code
-  → build ✅                        → build ✅
-  → test ✅                          → test ✅
-  → done                             → deploy automatically ✅
-                                     → app is live
-```
-
-### CI vs CD
-
-| | CI | CD |
-|--|----|----|
-| Full name | Continuous Integration | Continuous Deployment |
-| What it does | Build and test every push | Deploy after tests pass |
-| Goal | Catch bugs early | Ship faster with less manual work |
-| When it runs | On every push/PR | On every successful CI run |
+> For a full explanation of CI vs CD, see [CI vs CD](#ci-vs-cd) in Core Concepts above.
 
 ### Deploy options
 
@@ -1003,97 +1717,16 @@ push code                         push code
 
 Every job needs a machine to run on. That machine is called a **runner**. You choose it with `runs-on:`.
 
-There are two categories:
+There are two categories: **GitHub-hosted** (GitHub spins up a fresh VM, destroys it after the job) and **self-hosted** (your own machine, files persist).
 
-[↑ Back to top](#table-of-contents)
+> For the full comparison — available labels, pros/cons, and side-by-side table — see [Runners](#runners) in Core Concepts above.
 
----
-
-### 1. GitHub-Hosted Runners (GitHub manages everything)
-
-GitHub creates a fresh VM for each job, runs your steps, then destroys it. You do nothing — no setup, no maintenance.
-
+**Quick reference:**
 ```yaml
-runs-on: ubuntu-latest       # most common
-runs-on: windows-latest      # when you need Windows
-runs-on: macos-latest        # when you need macOS (iOS/macOS builds)
+runs-on: ubuntu-latest          # GitHub-hosted Linux (most common)
+runs-on: windows-latest         # GitHub-hosted Windows
+runs-on: [self-hosted, Windows] # your own Windows machine
 ```
-
-**Available options:**
-
-| Label | OS | Use when |
-|---|---|---|
-| `ubuntu-latest` | Ubuntu Linux | Default — fast, free, most actions work here |
-| `ubuntu-22.04` | Ubuntu 22.04 | Pin to a specific version for stability |
-| `ubuntu-20.04` | Ubuntu 20.04 | Older projects, being deprecated |
-| `windows-latest` | Windows Server | App needs Windows APIs or `.exe` builds |
-| `windows-2022` | Windows Server 2022 | Pin to specific version |
-| `macos-latest` | macOS | iOS app builds, macOS-only tools |
-| `macos-14` | macOS Sonoma | Specific macOS version |
-
-**What you get:**
-- Fresh clean VM every run (no leftover state)
-- Pre-installed tools: Node, .NET, Python, Docker, Git, etc.
-- No setup required — just pick the label
-
-**Limitations:**
-- VM is destroyed after the job — files do not persist
-- Cannot reach your internal network or databases
-- `macos` runners cost more (charged against paid minutes)
-
-[↑ Back to top](#table-of-contents)
-
----
-
-### 2. Self-Hosted Runners (You manage the machine)
-
-You register your own machine with GitHub. GitHub sends jobs to it instead of spinning up a VM. The machine can be anything — your laptop, a company server, an AWS EC2, or an Azure VM.
-
-```yaml
-runs-on: self-hosted                    # any available self-hosted runner
-runs-on: [self-hosted, Windows]         # only Windows self-hosted runners
-runs-on: [self-hosted, Linux]           # only Linux self-hosted runners
-runs-on: [self-hosted, macOS]           # only macOS self-hosted runners
-```
-
-**Where the machine lives — it doesn't matter to GitHub:**
-
-| Machine | Still called self-hosted? | Why |
-|---|---|---|
-| Your laptop | Yes | You registered it, you manage it |
-| AWS EC2 instance | Yes | You created and registered the VM |
-| Azure VM | Yes | You created and registered the VM |
-| Company server | Yes | Your org owns and manages it |
-
-The setup steps are identical regardless of where the machine is. GitHub just sends jobs to whatever endpoint you registered.
-
-**What you get:**
-- Files persist between runs (deploy folder stays)
-- Access to your internal network, databases, secrets on the machine
-- Any OS, hardware, or software you need
-- Free — you pay for the machine, not GitHub
-
-**Limitations:**
-- You are responsible for keeping the machine online and the runner service running
-- Security risk if repo is public — anyone could trigger your runner
-- Must manage updates, disk space, and environment yourself
-
-[↑ Back to top](#table-of-contents)
-
----
-
-### GitHub-Hosted vs Self-Hosted — side by side
-
-| | GitHub-Hosted | Self-Hosted |
-|---|---|---|
-| **Setup** | None — pick a label | Register machine once |
-| **Machine** | GitHub's VM (destroyed after job) | Your machine (persists) |
-| **State after job** | Gone | Files stay |
-| **Internal network** | No | Yes |
-| **Cost** | Free (Linux/Windows), paid (macOS/large) | Free (you pay for hardware) |
-| **Availability** | Always | Only when machine is online |
-| **Maintenance** | GitHub handles it | You handle it |
-| **Best for** | Build, test, lint | Deploy to specific machine |
 
 [↑ Back to top](#table-of-contents)
 
@@ -1287,6 +1920,38 @@ By default `upload-artifact` just shows a warning if the folder is missing and t
 
 **Rule:** Always use `if-no-files-found: error` so a missing build output is caught immediately.
 
+### Common mistakes with artifacts
+
+**1 — Spaces in paths cause failures**
+
+Spaces in `path:` values break artifact upload/download:
+
+```yaml
+# ❌ Wrong — spaces in path
+path: ${{ env.USERPROFILE }}\payvest-api-5 min build
+
+# ✅ Correct — no spaces
+path: ${{ env.USERPROFILE }}\payvest-api-5min-build
+```
+
+The shell interprets the space as a separator and treats `min` and `build` as separate arguments, causing the step to fail.
+
+**2 — Spaces in job names cause failures**
+
+Job names with spaces are not valid — use hyphens instead:
+
+```yaml
+# ❌ Wrong — spaces in job name
+Download Load to Local machine:
+  runs-on: self-hosted
+
+# ✅ Correct — hyphens only
+download-to-local:
+  runs-on: self-hosted
+```
+
+**Rule:** No spaces in job names or artifact paths — use hyphens.
+
 ### What changed in each workflow
 
 **`frontend-ci.yml`** — added after Run Tests:
@@ -1384,6 +2049,15 @@ jobs:
 
 `needs: build` means — *"wait for the `build` job to finish successfully before starting this job"*.
 
+### Parallel vs sequential jobs
+
+| Behaviour | How | When to use |
+|-----------|-----|-------------|
+| Parallel (default) | No `needs:` — jobs start immediately | Independent jobs (lint, test, security scan at the same time) |
+| Sequential | Add `needs: <job-id>` | When job 2 depends on job 1 passing (build → deploy) |
+
+**Important:** each job runs on its own runner — it cannot directly access files from another job's runner. To pass files between jobs, upload an artifact in job 1 and download it in job 2 (see Step 11).
+
 ### Real world use cases
 
 | Job 1 | needs | Job 2 — what you'd put here |
@@ -1423,26 +2097,11 @@ Instead of 1 job you now see 2 jobs listed:
 
 ## Step 13 — Environment Variables
 
-### What are environment variables?
+Environment variables let you define a value once at the top of the workflow and reuse it across all steps — avoiding repetition and making updates easy.
 
-Values you define once and reuse across multiple steps — so you don't repeat the same value in many places.
+> For a full conceptual explanation — what variables are, the 3 scopes, variables vs secrets, limits, and where to create them in the GitHub UI — see [Variables & Secrets](#variables--secrets) in Core Concepts above.
 
-### The 3 levels
-
-| Level | Where you write it | Who can see it |
-|-------|-------------------|----------------|
-| Workflow | Top of the file, before `on:` | Every job and step in the file |
-| Job | Under the job, before `steps:` | All steps in that job only |
-| Step | Under a specific step | That step only |
-
-### Rule — secrets vs non-secrets
-
-| Type | Where to put it | Example |
-|------|----------------|---------|
-| Non-sensitive config | Workflow or job level `env:` | version numbers, folder paths |
-| Secrets / tokens | Step level `env:` only | API keys, passwords, tokens |
-
-> This follows the Copilot review feedback from earlier — never put secrets at workflow level, always scope them to the step that needs them.
+**Rule:** Put non-sensitive config at workflow level. Put secrets at step level only — never at workflow level.
 
 ### What we added to each workflow
 
@@ -1493,7 +2152,183 @@ env:
   NODE_VERSION: '22'    # change here once — all steps get the new value
 ```
 
-If `build` fails, `notify` shows as **skipped** — it never runs.
+### OS environment variables vs GitHub expression variables
+
+There are two completely separate worlds when it comes to variables in GitHub Actions:
+
+| Label | Shell `run:` steps | `with:` blocks (action inputs) |
+|---|---|---|
+| **PowerShell** | `$env:USERPROFILE` ✅ | — |
+| **Bash** | `$HOME` ✅ | — |
+| **GitHub expression** | `${{ env.VAR }}` — values from the GitHub Actions `env` context | `${{ env.VAR }}` — values from the GitHub Actions `env` context |
+
+**Key rule:** `${{ env.VAR }}` reads variables in the GitHub Actions `env` context, such as values set in workflow/job/step `env:` blocks or exported for later steps via `$GITHUB_ENV`. It does **not** read OS environment variables like `USERPROFILE`, `HOME`, `PATH` etc. unless you explicitly copy them into that `env` context first.
+
+```yaml
+# ❌ Wrong — USERPROFILE is an OS variable, not a workflow env var
+- uses: actions/download-artifact@v4
+  with:
+    path: ${{ env.USERPROFILE }}\payvest-api   # USERPROFILE is empty → goes to C:\
+```
+
+### The `$GITHUB_ENV` bridge — passing OS variables into expressions
+
+To use an OS environment variable inside a `with:` block, first read it in a `run:` step and write it to `$GITHUB_ENV`:
+
+```yaml
+# ✅ Correct — read in shell, export to GITHUB_ENV, then use in with:
+- name: Set deploy path
+  shell: powershell
+  run: '"DEPLOY_PATH=$env:USERPROFILE\payvest-api" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
+- uses: actions/download-artifact@v4
+  with:
+    path: ${{ env.DEPLOY_PATH }}   # ✅ now works — DEPLOY_PATH is a workflow env var
+```
+
+**How it works:**
+```
+PowerShell reads $env:USERPROFILE → C:\Users\6031330
+  → writes DEPLOY_PATH=C:\Users\6031330\payvest-api to $GITHUB_ENV
+  → GitHub makes DEPLOY_PATH available via ${{ env.DEPLOY_PATH }} in all subsequent steps
+```
+
+**Real example from this repo:** `backend-ci.yml` and `scheduled-health-check.yml` both use this pattern in the download job to avoid downloading artifacts to the C:\ root.
+
+### `$GITHUB_OUTPUT` — passing data between steps
+
+`$GITHUB_OUTPUT` is a special file GitHub creates for every step. Write key-value pairs to it, and other steps can read them.
+
+Think of it as a **sticky note** — Step 1 writes a message, sticks it on the wall, Step 2 reads it.
+
+```yaml
+# Step 1 — write
+- name: Check something
+  id: my-check                                    # ← step ID (the sticky note label)
+  run: echo "result=hello" >> $GITHUB_OUTPUT       # ← write to the file
+
+# Step 2 — read
+- name: Use result
+  run: echo "${{ steps.my-check.outputs.result }}" # ← reads "hello"
+```
+
+**Why not just use a regular variable?**
+
+Each step runs in its own shell — when the shell exits, all variables are gone:
+
+```bash
+# ❌ Does NOT work across steps — variable dies when step ends
+export MY_VAR=true
+
+# ✅ $GITHUB_OUTPUT survives — it's a file on disk, not a shell variable
+echo "my_var=true" >> $GITHUB_OUTPUT
+```
+
+**Using `$GITHUB_OUTPUT` for conditional steps (`if:`):**
+
+```yaml
+- name: Check .NET version
+  id: check-dotnet
+  run: |
+    version=$(dotnet --version)
+    major=$(echo "$version" | cut -d'.' -f1)
+    echo "Pre-installed: $version (major: $major)"
+    if [[ $major -ge 9 ]]; then
+      echo "skip=true" >> $GITHUB_OUTPUT
+    else
+      echo "skip=false" >> $GITHUB_OUTPUT
+    fi
+
+- name: Setup .NET
+  if: steps.check-dotnet.outputs.skip != 'true'   # ← skips if version >= 9
+  uses: actions/setup-dotnet@v4
+  with:
+    dotnet-version: '9.0.x'
+```
+
+**Real example from this repo:** `backend-ci.yml` and `scheduled-health-check.yml` use this pattern to skip `setup-dotnet` when the runner already has .NET 9+ installed — avoiding a ~250MB download every run.
+
+### `$GITHUB_OUTPUT` vs `$GITHUB_ENV` — when to use which
+
+| | `$GITHUB_OUTPUT` | `$GITHUB_ENV` |
+|---|---|---|
+| **Purpose** | Pass data to specific steps | Set env var for all later steps |
+| **How to write** | `echo "key=value" >> $GITHUB_OUTPUT` | `echo "KEY=value" >> $GITHUB_ENV` |
+| **How to read** | `${{ steps.step-id.outputs.key }}` | `${{ env.KEY }}` |
+| **Scope** | Must reference step ID | Available everywhere after |
+| **Best for** | Conditional logic (`if:`) | Paths, config values (`with:`) |
+
+**Rule of thumb:**
+- Need to decide whether to **skip or run** a step? → `$GITHUB_OUTPUT`
+- Need to **set a value** for later steps to use? → `$GITHUB_ENV`
+
+### Passing data between jobs
+
+`$GITHUB_OUTPUT` and `$GITHUB_ENV` only work **within the same job**. To pass data between jobs, expose step outputs as **job outputs**:
+
+```yaml
+jobs:
+  job1:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}   # ← expose as job output
+    steps:
+      - id: check
+        run: echo "version=9.0" >> $GITHUB_OUTPUT
+
+  job2:
+    needs: job1
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Version from job1: ${{ needs.job1.outputs.version }}"
+```
+
+**How it flows:**
+```
+Step output ($GITHUB_OUTPUT)
+  → Job output (outputs: on the job)
+    → Read via needs.job1.outputs.version in job2
+```
+
+| Method | Between Steps | Between Jobs |
+|---|---|---|
+| `$GITHUB_OUTPUT` | ✅ | ❌ (need job `outputs:`) |
+| `$GITHUB_ENV` | ✅ | ❌ |
+| Job `outputs:` + `needs:` | — | ✅ |
+| Artifacts (upload/download) | ✅ | ✅ (for files, not values) |
+
+### `setup-dotnet` always downloads — the version check pattern
+
+`actions/setup-dotnet@v4` downloads and installs the .NET SDK **every run** — even if the runner already has that version. On `ubuntu-latest` this means ~250MB downloaded each time.
+
+```
+ubuntu-latest has .NET 10.0 pre-installed
+setup-dotnet downloads .NET 9.0 (~250MB) every run
+  → on a */5 cron, that's 250MB × 288 = ~70GB per day wasted
+```
+
+**The fix — check before installing:**
+
+```yaml
+- name: Check .NET version
+  id: check-dotnet
+  run: |
+    version=$(dotnet --version)
+    major=$(echo "$version" | cut -d'.' -f1)
+    if [[ $major -ge 9 ]]; then
+      echo "skip=true" >> $GITHUB_OUTPUT
+    else
+      echo "skip=false" >> $GITHUB_OUTPUT
+    fi
+
+- name: Setup .NET
+  if: steps.check-dotnet.outputs.skip != 'true'
+  uses: actions/setup-dotnet@v4
+  with:
+    dotnet-version: '9.0.x'
+```
+
+**Real example from this repo:** Both `backend-ci.yml` and `scheduled-health-check.yml` use this pattern to skip the download when .NET 9+ is already available.
 
 [↑ Back to top](#table-of-contents)
 
@@ -1990,3 +2825,128 @@ http://localhost:5050/swagger/index.html
 ✅ notify          (2s)
 ✅ deploy          (30s)  ← runs on your machine
 ```
+
+[↑ Back to top](#table-of-contents)
+
+---
+
+## Step 17 — Permissions
+
+### What are permissions?
+
+Permissions control what your workflow is allowed to do with the GitHub API — like reading code, writing to issues, creating packages, etc.
+
+Think of it like **office keycards** — the workflow is an employee, permissions are which doors they can open.
+
+### Default behavior
+
+Without `permissions:`, your workflow gets **read access to everything** in the repo:
+
+```yaml
+# These two are the same:
+build:
+  runs-on: ubuntu-latest         # ← no permissions = default read-all
+
+build:
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+    issues: read
+    packages: read
+    pull-requests: read
+    # ... read on everything
+```
+
+### Common permissions
+
+| Permission | What it controls |
+|---|---|
+| `contents: read` | Read repo code (checkout) |
+| `contents: write` | Push commits, create releases |
+| `issues: write` | Create/comment on issues |
+| `pull-requests: write` | Comment on PRs |
+| `packages: write` | Publish packages |
+
+### Permission levels
+
+Each permission can be set to:
+
+| Level | What it means |
+|---|---|
+| `read` | Can view but not modify |
+| `write` | Can view and modify |
+| `none` | No access at all |
+
+### Where to set permissions
+
+Permissions can be set at **two levels** — workflow or job:
+
+```yaml
+# Workflow level — applies to ALL jobs
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest     # ← gets contents: read from workflow level
+
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write          # ← overrides workflow level
+                               #    gets ONLY packages: write
+                               #    loses contents: read!
+```
+
+**Important:** Job-level permissions **replace** workflow-level permissions — they do NOT merge.
+
+### How scoping works
+
+| Scenario | What the job gets |
+|---|---|
+| No `permissions:` anywhere | Read access to everything |
+| `permissions:` on workflow only | All jobs get those permissions |
+| `permissions:` on job only | That job gets those permissions, others get default |
+| `permissions:` on both | Job-level **replaces** workflow-level (not merges) |
+| `permissions: {}` | Zero access — nothing |
+
+### Why it matters — security
+
+```yaml
+# ❌ Risky — job can read everything (default)
+deploy:
+  runs-on: ubuntu-latest
+
+# ✅ Safe — job can only read code, nothing else
+deploy:
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+```
+
+If someone injects malicious code into your workflow, limited permissions prevent damage — they can't push code, delete branches, or access secrets they shouldn't.
+
+**Rule:** Give each job only the permissions it actually needs. Use `permissions: {}` for jobs that don't interact with GitHub at all.
+
+### Test it yourself
+
+```yaml
+# ❌ This will fail — checkout needs contents: read
+permission-test-fail:
+  runs-on: ubuntu-latest
+  permissions: {}
+  steps:
+    - name: Try checkout with no permissions
+      uses: actions/checkout@v5    # → "Resource not accessible by integration"
+
+# ✅ This will pass — has the right permission
+permission-test-pass:
+  runs-on: ubuntu-latest
+  permissions:
+    contents: read
+  steps:
+    - name: Checkout with read permission
+      uses: actions/checkout@v5    # → works
+```
+
+[↑ Back to top](#table-of-contents)
