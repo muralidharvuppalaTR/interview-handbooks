@@ -27,8 +27,8 @@
   - [Customize](#feature-3-customize)
   - [Artifacts](#feature-4-artifacts)
   - [Ask your org](#feature-5-ask-your-org)
-  - [Pinned](#feature-6-pinned)
-  - [Developer mode](#feature-7-developer-mode)
+  - [Skills](#feature-6-skills)
+  - [Research](#feature-7-research)
 - [Learning Path](#learning-path)
 
 ---
@@ -105,6 +105,20 @@
 - Build prototypes and mockups
 - Create presentations and documents
 - Write and run code in the browser
+
+### Use cases by role
+
+| Role | What Claude can help with |
+|------|--------------------------|
+| **General** | Project status reports, analyze user feedback patterns, package brand guidelines into a skill |
+| **Sales** | Build competitive battle card libraries, prepare for deals with prospect research, create pipeline reports |
+| **Marketing** | Analyze campaign performance metrics, repurpose content across platforms and channels |
+| **Finance** | Build financial models and projections, draft investment memos, decode inherited spreadsheets |
+| **HR** | Create role-specific onboarding guides and documentation |
+| **Legal** | Track discovery timelines, analyze patterns in legal documents |
+| **Research** | Plan literature reviews, verify statistics from raw data |
+
+> Anthropic maintains a **Use Case Gallery** with step-by-step guides for each of these workflows.
 
 [Back to top](#table-of-contents)
 
@@ -225,20 +239,70 @@ Designed for **software engineers**. Claude Code with a desktop UI — deeper ac
 
 ## Where Can You Use Claude?
 
-Claude isn't limited to the web app. You can access it inside the tools you already use daily:
+Claude is an intelligence. Claude.ai is just one way of working with it. Each tool below extends Claude into the environment where you already work.
 
-| Where you work | Integration | What it does |
-|---------------|-------------|-------------|
-| Browser | **Claude.ai** | Full-featured web app |
-| Desktop | **Claude Desktop** | Native app for Mac/Windows |
-| Terminal / CLI | **Claude Code** | Autonomous coding agent |
-| Phone | **Claude Mobile** | iOS / Android app |
-| Slack | **Claude for Slack** | Chat with Claude in any channel, `@Claude` in threads. Claude searches your workspace messages and files for context |
-| MS Teams / Outlook / SharePoint | **Microsoft 365 Connector** | Claude searches Teams chats, Outlook emails, OneDrive/SharePoint docs. Read-only access. Available on all plans including Free |
-| Excel | **Claude for Excel** | Sidebar in Excel — reads, analyzes, modifies spreadsheets. Great for formulas, debugging, data analysis |
-| Your own app | **Claude API** | Build custom apps powered by Claude |
+#### Summary
 
-> **Note:** The Microsoft 365 Connector requires a work account (not personal @outlook.com). For corporate environments, an IT admin must enable it first.
+| Tool | Best for | Where it runs |
+|------|----------|--------------|
+| **Claude.ai** | General tasks, research, writing, analysis, file creation | Web, desktop, and mobile apps |
+| **Claude Code** | Software development, codebase navigation, git workflows | Terminal, IDE, or browser |
+| **Claude Cowork** | Complex multi-step tasks: research, docs, file organization | Desktop (+ mobile via Dispatch) |
+| **Claude in Slack** | Team collaboration, meeting prep, quick answers in context | Slack workspace |
+| **Claude for Excel** | Spreadsheet analysis, financial modeling, formula debugging | Microsoft Excel sidebar |
+| **Claude for PowerPoint** | Slide creation, presentation editing, formatting | Microsoft PowerPoint sidebar |
+| **Claude for Chrome** | Web research, email management, browser automation | Chrome browser sidebar |
+| **Claude API** | Build custom apps powered by Claude | Your own application |
+
+#### Claude Code
+
+Agentic coding tool that works in your terminal, IDE, browser, or Slack. Also available as the **Code tab** in the Desktop app (see [Desktop App > Code](#code-development-mode) above for details).
+
+**When to use:**
+- Build features by describing what you need in plain English — Claude writes code, runs tests, creates commits
+- Debug issues by pasting error messages — Claude analyzes your codebase to find and fix the problem
+- Navigate an unfamiliar codebase — ask how different parts work together
+- Automate tedious tasks — lint fixes, merge conflicts, release notes
+- Work in your terminal alongside your existing IDE
+
+#### Claude in Slack
+
+Integrates directly into Slack — get help in channels/threads or bring Slack context into Claude conversations.
+
+**When to use:**
+- Summarize lengthy threads, draft responses, break down complex discussions
+- Prepare for meetings — pull together relevant conversations and docs from your workspace
+- Onboard to a new team — review channel history to understand ongoing projects
+- Hand off coding tasks — tag `@Claude` in a bug report and it can spin up a Claude Code session with that context
+- Get quick answers about trends, technical concepts, or company info mid-conversation
+
+#### Claude for Excel
+
+Sidebar in Microsoft Excel — analyze, understand, and modify spreadsheets through conversation.
+
+**When to use:**
+- Understand how formulas or calculation flows work across sheets in complex workbooks
+- Update assumptions/inputs while preserving formula dependencies
+- Debug errors (`#REF!`, `#VALUE!`, circular references) — Claude traces them to the source
+- Create new spreadsheets or populate templates with proper formula structure
+- Build pivot tables or charts to visualize data
+
+#### Claude for Chrome
+
+Browser extension that adds Claude as a sidebar in Chrome. It observes what you're working on and takes actions within your browser.
+
+**When to use:**
+- Summarize articles, research papers, or web pages while browsing
+- Draft email responses or manage your inbox
+- Automate repetitive form-filling
+- Test website features or navigate multi-step workflows
+- Pull context from internal tools, CRMs, or dashboards — maintains context across tabs
+
+> **Note:** Currently in research preview. Recommended for low-risk tasks on trusted websites. Permission prompts appear before high-risk actions. Financial services and adult content sites are blocked by default.
+
+#### Microsoft 365 Connector
+
+> The Microsoft 365 Connector requires a work account (not personal @outlook.com). For corporate environments, an IT admin must enable it first.
 
 [Back to top](#table-of-contents)
 
@@ -346,8 +410,8 @@ As you integrate Claude into more of your work, you need to know: **is Claude ac
 | **Customize** | Set personal preferences — tone, role, response style |
 | **Artifacts** | Side panel — renders code, documents, web pages, interactive apps live |
 | **Ask your org** | Search your organization's internal knowledge (Enterprise only) |
-| **Pinned** | Pin important conversations for quick access |
-| **Developer mode `<>`** | Toggle to see code/API view alongside chat |
+| **Skills** | Expertise packages — reusable instructions for specialized tasks |
+| **Research** | Systematic multi-source investigation with citations |
 
 ---
 
@@ -491,7 +555,49 @@ You can sort by **Activity** (most recent) or other criteria using the Sort drop
 
 ### Feature 3: Customize
 
-*Coming soon — detailed walkthrough*
+The Customize page is your central hub for personalizing Claude's behavior. Access it from the sidebar.
+
+#### What you can manage from Customize
+
+| Section | What it does |
+|---------|-------------|
+| **Personal preferences** | Set how Claude responds — tone, role, expertise level, response style |
+| **Skills** | Enable/disable Anthropic and custom skills |
+| **Connectors** | Connect external tools so Claude can pull context automatically |
+
+#### Connectors
+
+Connectors transform Claude from an assistant into an **informed collaborator** by giving Claude access to the same tools, data, and context you use every day. Instead of starting every conversation from scratch, Claude works directly with your actual information.
+
+Depending on the connector and permissions you grant, Claude can search files, retrieve documents, analyze data, create new content, update records, and execute tasks — all from within your conversation.
+
+**Powered by MCP (Model Context Protocol)** — think of MCP like USB-C for AI. It's a universal standard that allows Claude to connect to many different applications through a single, consistent interface.
+
+#### Two types of Connectors
+
+| Type | Where it runs | Examples |
+|------|-------------|---------|
+| **Web connectors** | Cloud services via claude.ai | Gmail, Google Drive, Notion, Slack, Asana, Linear, Stripe, Microsoft 365, GitHub |
+| **Desktop extensions** | Locally via Claude Desktop app | Local file access, browser control, native app integration (e.g., Figma) |
+
+Browse all available connectors at **[claude.ai/directory](https://claude.ai/directory)** — organized into Web and Desktop Extensions tabs.
+
+#### Setting up a Web Connector
+
+1. **Find the connector** — Go to [claude.ai/directory](https://claude.ai/directory) or click **"Search and tools" > "Add connectors"** in any chat
+2. **Click Connect** — Select the connector you want
+3. **Authenticate** — Sign in with your existing credentials for that service
+4. **Grant permissions** — Review what Claude is requesting, then authorize
+5. **Test it** — Ask Claude: *"Can you access my [tool name]?"*
+
+#### Setting up a Desktop Extension
+
+1. Download and install the **Claude Desktop app**
+2. Open the app > **Settings > Extensions**
+3. Browse available extensions and click **Install**
+4. Follow any additional setup steps for that extension
+
+> **Note:** For corporate accounts, an IT admin may need to grant consent before connectors work.
 
 ---
 
@@ -547,21 +653,121 @@ When you publish:
 
 ---
 
-### Feature 5: Ask your org
+### Feature 5: Ask your org (Enterprise Search)
 
-*Coming soon — detailed walkthrough*
+A dedicated **"Ask {Your Org Name}"** option in the sidebar, designed for finding and synthesizing knowledge across your company's tools. Think of it as a **pre-built Project for your entire organization** — your company's knowledge base is already loaded.
+
+Unlike regular chats with connectors, Enterprise Search is specifically optimized for information gathering with custom instructions configured by Anthropic.
+
+When you ask a question, Claude searches across **all connected tools** — SharePoint, Slack, Gmail, Google Drive — and synthesizes a unified response with **source citations**.
+
+#### Setup for Admins (Owners)
+
+Enterprise Search is enabled by default for Team and Enterprise orgs, but an Owner must complete initial setup:
+
+1. Click **"Ask Your Org"** in the sidebar
+2. Click **"Set up for your org"**
+3. Connect org tools — required: **Documents** (Google Drive / SharePoint) + **Chat** (Slack / Teams). Email is optional but recommended
+4. Click **"+ Add more"** for additional tools
+5. Customize the project name (appears as "Ask [Name]" in everyone's sidebar)
+6. Add a description > **"Finish set up"**
+
+#### Setup for Users
+
+After admin setup, the project appears starred in your sidebar:
+
+1. Click the project in the sidebar
+2. Follow the onboarding flow to connect services
+3. Authenticate with each service (Slack, Google, Microsoft 365, etc.)
+4. Start asking questions about your org's knowledge
+
+> The more connectors you enable, the more comprehensive the results. Add more anytime via **"Connect"** in the project's Instructions section.
 
 ---
 
-### Feature 6: Pinned
+### Feature 6: Skills
 
-*Coming soon — detailed walkthrough*
+Skills are expertise packages that Claude loads dynamically to improve performance on specialized tasks. They teach Claude how to complete specific tasks in a **repeatable, consistent way**.
+
+You've already seen Skills at work if you've used Claude to create Excel spreadsheets, PowerPoint presentations, Word documents, or PDFs — those capabilities are **powered by Skills running behind the scenes**.
+
+Custom Skills go beyond document creation. They can codify entire repeatable workflows — a quarterly variance analysis, a brand voice review process, or a compliance checklist — so Claude follows the same rigorous steps every time.
+
+#### Types of Skills
+
+| Type | Who creates | How it works | Example |
+|------|-----------|-------------|---------|
+| **Anthropic Skills** | Anthropic | Built-in, auto-invoked when relevant. Available to all paid users | Excel, Word, PowerPoint, PDF file creation |
+| **Custom Skills** | You or your org | Created for specialized workflows and domain-specific tasks | Brand guideline checks, meeting note formatting, compliance checklists, data analysis pipelines |
+
+#### Managing Skills
+
+Skills have moved to the **Customize** page. To manage your skills and connectors:
+
+**Customize** (in the sidebar) > **Skills & Connectors**
+
+From here you can enable/disable individual skills and manage connectors.
+
+> **Requirement:** Skills require **Code execution and file creation** to be enabled, since they run in Claude's secure sandboxed environment.
+
+#### Creating a Custom Skill
+
+**Step 1: Create the skill folder**
+- Create a folder with your skill name (e.g., `brand-review/`)
+- Add a `SKILL.md` file with frontmatter (`name`, `description`) and instructions
+- Optionally add supporting files (templates, checklists, reference docs)
+
+**Step 2: Package and upload**
+- ZIP the skill folder (the ZIP must contain the folder at the root, not just the files inside)
+- Go to **Customize > Skills** > Click **"+"** > **"+ Create skill"**
+- Upload your ZIP file
+
+**Step 3: Enable and use**
+- Your skill appears in the Skills list — toggle it on/off as needed
+- Custom skills are **private to your account**
+- Claude auto-invokes the skill when relevant, or you can reference it in your prompt
+
+#### When to create a Custom Skill
+
+- You repeat the same multi-step workflow regularly
+- You want Claude to follow a specific methodology every time
+- Your team needs consistent output format across members
+- You want to automate a process with specific rules (e.g., *"When I upload a receipt, extract vendor, amount, date and categorize it"*)
+
+> **Learn more:** Free course — [Introduction to Agent Skills](https://anthropic.skilljar.com/introduction-to-agent-skills) on Anthropic Academy
 
 ---
 
-### Feature 7: Developer mode
+### Feature 7: Research
 
-*Coming soon — detailed walkthrough*
+An advanced feature that transforms Claude from a conversational assistant into a **systematic investigator**. Claude explores your question from multiple angles, synthesizing information from the web and your connected integrations — like having a research assistant that works in minutes instead of hours.
+
+#### When to use Research vs other features
+
+| Use | When |
+|-----|------|
+| **Research** | Need comprehensive reports from multiple sources, comparative analysis, thorough investigations with citations |
+| **Web search** | Need a quick specific fact (stock price, address) — one or two sources, speed over depth |
+| **Extended thinking** | Need deep reasoning without external info — math, code debugging, logic problems |
+| **Enterprise search** | Need answers from your **company's internal** knowledge — docs, Slack threads, emails, meeting notes. Example: *"How does our team handle deployment approvals?"* — the answer lives in your org's Slack/docs, not on the public web |
+
+#### How Research works
+
+| Step | What happens |
+|------|-------------|
+| **1. Plans** | Extended thinking activates automatically — Claude breaks down your request, identifies what info it needs, plans the investigation |
+| **2. Searches** | Conducts **multiple searches** that build on each other — pursues leads and fills gaps autonomously |
+| **3. Synthesizes** | Compiles findings from web + connected integrations (Gmail, Google Drive, etc.) into a comprehensive, organized report |
+| **4. Cites** | Every claim links back to its source — easy to verify and dig deeper |
+
+#### How to use Research
+
+1. Find the **Research button** on the bottom left of your chat
+2. Click to enable — it turns blue when active
+3. Enter your prompt and submit
+4. Claude works in the background — you'll see progress indicators as it searches
+
+> **Requirement:** Web search must be enabled for Research to work. Turn it on in **Search and tools** settings.
 
 [Back to top](#table-of-contents)
 
