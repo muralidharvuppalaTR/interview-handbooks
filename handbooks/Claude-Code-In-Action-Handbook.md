@@ -304,34 +304,65 @@ Claude Code comes with built-in commands and bundled skills:
 
 ## Planning and Thinking Modes
 
-### Plan Mode
+### Planning Mode
 
-For complex tasks, use **Plan Mode** to have Claude design the approach before writing code:
+For complex tasks that require exploring your codebase before making changes, enable **Planning Mode**. Press `Shift+Tab` twice (or once if already auto-accepting edits).
 
+In Planning Mode, Claude will:
+1. Read more files across your project
+2. Create a detailed implementation plan
+3. Show you exactly what it intends to do
+4. Wait for your approval before proceeding
+
+This gives you the chance to review and redirect before any code changes happen.
+
+**Example:**
 ```
-> /plan Add user authentication with JWT to our API
+> (Planning Mode enabled via Shift+Tab twice)
+> Add user authentication with JWT to our API
 
 Claude will:
-1. Analyze your current project structure
-2. Identify files to create/modify
-3. Present a step-by-step plan
-4. Wait for your approval before implementing
+1. Analyze current project structure, routes, middleware
+2. Identify all files to create/modify
+3. Present a step-by-step plan with reasoning
+4. Wait for your "go ahead" before writing any code
 ```
 
-Use Plan Mode when:
-- Adding a new feature that touches multiple files
-- Refactoring code architecture
+Use Planning Mode when:
+- Tasks require broad understanding of your codebase
+- Multi-step implementations across multiple files
 - You want to review the approach before Claude starts coding
+- Changes affect multiple components or modules
 
-### Extended Thinking
+### Thinking Modes
 
-Extended thinking gives Claude more time to reason through complex problems:
+Thinking modes give Claude progressively more reasoning time for complex problems. You can trigger them by including these keywords in your prompt:
 
-Use when:
-- Debugging tricky issues
-- Architectural decisions
-- Complex algorithm design
-- Multi-step refactoring
+| Keyword | Level | Tokens | Best for |
+|---------|-------|--------|----------|
+| "think" | Basic | Standard | Quick reasoning |
+| "think more" | Extended | More | Moderate complexity |
+| "think a lot" | Comprehensive | Even more | Complex logic |
+| "think longer" | Deep | High | Multi-step problems |
+| "ultrathink" | Maximum | Highest | Hardest problems |
+
+Each level gives Claude progressively more tokens to work through the problem before responding.
+
+**Example:**
+```
+> Think a lot about why this recursive function causes a stack overflow
+> with inputs larger than 1000. @utils/parser.ts
+```
+
+### When to use Planning vs Thinking
+
+| Situation | Use | Why |
+|-----------|-----|-----|
+| *"Add OAuth to our API"* | **Planning** | Needs to understand many files before changing anything |
+| *"Why does this regex fail on edge cases?"* | **Thinking** | Deep reasoning on one problem, no codebase exploration needed |
+| *"Refactor our DB layer to use repository pattern"* | **Both** | Needs codebase exploration (planning) AND complex design decisions (thinking) |
+
+**Cost note:** Both features consume additional tokens. Use basic prompts for simple tasks, and save planning/thinking for problems that genuinely need them.
 
 [Back to top](#table-of-contents)
 
