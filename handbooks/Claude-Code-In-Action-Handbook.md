@@ -27,6 +27,9 @@
   - [Security Hook Example](#security-hook-example)
   - [Useful Hook Patterns](#useful-hook-patterns)
 - [Extending Claude Code with MCP Servers](#extending-claude-code-with-mcp-servers)
+  - [Adding MCP servers](#adding-mcp-servers)
+  - [Playwright MCP (browser automation)](#practical-example-playwright-mcp)
+  - [Managing MCP servers](#managing-mcp-servers)
 - [GitHub Integration](#github-integration)
 - [Claude Code SDK](#claude-code-sdk)
 - [Tips & Tricks from Real Usage](#tips--tricks-from-real-usage)
@@ -499,27 +502,40 @@ Prevent Claude from accidentally committing `.env` files:
 
 ## Extending Claude Code with MCP Servers
 
-**MCP (Model Context Protocol)** lets you add new capabilities to Claude Code by connecting external tools.
+**MCP (Model Context Protocol)** lets you add new capabilities to Claude Code by connecting external tools. Think of MCP like **USB-C for AI** — a universal standard that lets Claude plug into any tool through a single interface.
 
 ### What MCP can do
 
-| MCP Server | Capability |
-|-----------|-----------|
-| **Browser automation** | Claude can open URLs, click buttons, fill forms |
-| **Database access** | Claude can query your database directly |
-| **API integration** | Claude can call external APIs |
-| **File system tools** | Extended file operations |
+| MCP Server | Capability | Package |
+|-----------|-----------|---------|
+| **Playwright (Browser)** | Open URLs, click buttons, fill forms, take screenshots | `@playwright/mcp` |
+| **Database access** | Query your database directly | `@anthropic-ai/mcp-server-postgres` |
+| **API integration** | Call external APIs | Custom MCP servers |
+| **File system tools** | Extended file operations | `@anthropic-ai/mcp-server-filesystem` |
+| **Code scanning** | Find and fix security vulnerabilities | Custom MCP servers |
 
-### Configuring MCP servers
+### Adding MCP servers
 
-Add MCP servers in your Claude Code settings:
+The easiest way — one command:
+
+```bash
+# Global (available in all projects)
+claude mcp add playwright npx @playwright/mcp@latest
+
+# Project-specific
+claude mcp add --scope project playwright npx @playwright/mcp@latest
+```
+
+This auto-saves config to `~/.claude.json` (global) or `.claude/settings.json` (project).
+
+You can also configure manually in `.claude/settings.json`:
 
 ```json
 {
   "mcpServers": {
-    "browser": {
+    "playwright": {
       "command": "npx",
-      "args": ["@anthropic-ai/mcp-server-browser"]
+      "args": ["@playwright/mcp@latest"]
     },
     "postgres": {
       "command": "npx",
@@ -532,12 +548,38 @@ Add MCP servers in your Claude Code settings:
 }
 ```
 
-### Using MCP in practice
+### Practical example: Playwright MCP
 
-Once configured, Claude Code can:
-- *"Open the staging URL and check if the login page loads"* (browser MCP)
+After adding Playwright MCP, Claude Code gets 26+ browser automation tools. You can:
+
+```bash
+# Ask Claude to test a web page
+> Open https://myapp.com/login and take a screenshot
+
+# Fill out a form
+> Go to the signup page, fill in name "Test User" and email "test@example.com", then click Submit
+
+# Test a workflow
+> Navigate to the dashboard, click "Create Report", fill the form, and verify it saves
+```
+
+**Requirement:** Node.js 18+ (LTS)
+
+### Other MCP examples
+
 - *"Query the users table and show me the last 10 signups"* (database MCP)
 - *"Call our internal API and check the health endpoint"* (API MCP)
+- *"Scan this project for security vulnerabilities"* (code scanning MCP)
+
+### Managing MCP servers
+
+```bash
+# List all configured MCP servers
+claude mcp list
+
+# Remove an MCP server
+claude mcp remove playwright
+```
 
 [Back to top](#table-of-contents)
 
