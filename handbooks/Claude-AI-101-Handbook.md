@@ -13,11 +13,14 @@
 - [What can you use Claude.ai for?](#what-can-you-use-claudeai-for)
 - [How is Claude.ai different from Google / ChatGPT / Copilot / Cursor?](#how-is-claudeai-different-from-google--chatgpt--copilot--cursor)
 - [Why choose Claude.ai?](#why-choose-claudeai)
+- [Claude Desktop App — Chat, Cowork & Code](#claude-desktop-app--chat-cowork--code)
 - [Where Can You Use Claude? (Integrations)](#where-can-you-use-claude)
 - [How to Get the Best from Claude](#how-to-get-the-best-from-claude)
   - [Writing effective prompts](#writing-effective-prompts)
   - [Adding context](#adding-context)
   - [Iterating on responses](#iterating-on-responses)
+  - [AI Fluency — The 4D Framework](#ai-fluency--the-4d-framework)
+  - [Evaluating Claude for your workflows](#evaluating-claude-for-your-workflows)
 - [Claude.ai Features](#claudeai-features)
   - [Chat](#feature-1-chat)
   - [Projects](#feature-2-projects)
@@ -46,10 +49,11 @@
 
 | Product | What it is | How to access | Use case |
 |---------|-----------|---------------|----------|
-| **Claude.ai** | Web/desktop chat app | [claude.ai](https://claude.ai) | General purpose — writing, analysis, coding, learning |
+| **Claude.ai** | Web chat app | [claude.ai](https://claude.ai) | General purpose — writing, analysis, coding, learning |
+| **Claude Desktop** | Native desktop app with 3 modes | Download from [claude.ai](https://claude.ai) | Chat + Cowork (agentic tasks) + Code (development) |
 | **Claude Code** | Terminal-based coding agent | CLI tool | Deep coding tasks, multi-file changes, CLI workflows |
 | **Claude API** | Developer API | [console.anthropic.com](https://console.anthropic.com) | Build apps powered by Claude |
-| **Claude Mobile** | iOS/Android app | App Store / Play Store | Chat on the go |
+| **Claude Mobile** | iOS/Android app | App Store / Play Store | Chat on the go + Dispatch (hand off tasks to Desktop) |
 
 [Back to top](#table-of-contents)
 
@@ -149,6 +153,59 @@
 
 ---
 
+## Claude Desktop App — Chat, Cowork & Code
+
+The desktop app gives you three ways to work with Claude. All three are powered by Claude Code under the hood but serve different purposes.
+
+### Chat
+
+Same Claude you know from claude.ai, plus desktop-native features:
+- **Quick entry** — launch Claude from anywhere on your computer
+- **Screenshots** — capture and share your screen directly
+- **Dictation** — speak instead of typing
+- **Connectors** — pull context from Slack, Teams, Outlook etc.
+
+### Cowork (Agentic Mode)
+
+Give Claude a goal, connect it to your tools, and let it do the work autonomously. Cowork has the scope to tackle larger, multi-step tasks.
+
+| Capability | What it does |
+|-----------|-------------|
+| **Planning** | Claude asks clarifying questions, builds a plan you can review in the sidebar before starting |
+| **Folder access** | Point Claude to a local folder — it reads files, figures out what's relevant, saves finished work back |
+| **Subagents** | Background workers that handle parts of a task in parallel (e.g., research from multiple sources) |
+| **Scheduled tasks** | Recurring work on a schedule — daily briefings, weekly roundups, morning inbox triage. Catches up if your computer was off |
+| **Browser use** | Navigates websites in Chrome — check competitor pricing, gather data from pages without APIs |
+| **Computer use** | Clicks, types, and opens apps on your computer when no connector/plugin exists. Follows priority: connectors > Chrome > screen interaction. Requires permission per app |
+| **Plugins** | Add capabilities — live financial data, internal knowledge bases, compliance frameworks |
+| **Dispatch** | Continue Cowork conversations from your phone via the mobile app (requires desktop app open) |
+| **Projects** | Group related tasks into workspaces with their own files, context, instructions, and memory |
+
+> **Security:** Cowork runs in a contained space — Claude can only access folders you explicitly share.
+
+### Code (Development Mode)
+
+Full development environment for building software — same engine as Claude Code CLI but inside the desktop app.
+
+| Capability | What it does |
+|-----------|-------------|
+| **Full codebase access** | Reads, writes, and modifies code directly in your project |
+| **Visual diffs** | See exactly what changed |
+| **Built-in terminal** | Commands run and display in real-time |
+| **Multiple sessions** | Run sessions across projects, filter by Active/Archived and Local/Cloud |
+
+### Cowork vs Code
+
+| | Cowork | Code |
+|-|--------|------|
+| **Scope** | Contained workspace (only shared folders) | Full file system + terminal access |
+| **Best for** | Research, writing, analysis, multi-tool tasks | Building and shipping software |
+| **Engine** | Claude Code (sandboxed) | Claude Code (full access) |
+
+[Back to top](#table-of-contents)
+
+---
+
 ## Where Can You Use Claude?
 
 Claude isn't limited to the web app. You can access it inside the tools you already use daily:
@@ -212,7 +269,12 @@ Go to **Settings > General > "What personal preferences should Claude consider?"
 
 ### Iterating on responses
 
-Claude rarely nails it on the first try for complex tasks. The key is to **iterate** — treat it like a conversation, not a one-shot query.
+Your first prompt rarely produces a perfect result — and that's okay. Think of it as the **start of a conversation**, not a one-shot request.
+
+**Effective Claude users:**
+- Treat first drafts as starting points — review, identify gaps, then refine
+- Give specific feedback — *"Cut the first two paragraphs and make the conclusion more action-oriented"* beats *"Make it shorter"*
+- Know when to start fresh — if a conversation has gone off track, a new chat with a clearer prompt is often faster than trying to redirect
 
 ### If the response isn't quite right, you can:
 
@@ -225,6 +287,34 @@ Claude rarely nails it on the first try for complex tasks. The key is to **itera
 | **Start fresh** | Context has become too muddled | Open a new chat to fully reset |
 
 > **Pro tip:** Editing your original message (pencil icon) is often better than adding a new message — it gives Claude a clean starting point without conflicting instructions.
+
+---
+
+### AI Fluency — The 4D Framework
+
+**AI Fluency** is the ability to collaborate effectively with AI — not just knowing which buttons to click, but developing the judgment to use AI well. The **4D Framework** identifies four core competencies:
+
+| Competency | What it means | Example |
+|------------|--------------|---------|
+| **Delegation** | Deciding what work should be done by humans vs AI, and how to distribute tasks | A developer delegates boilerplate CRUD code to Claude but writes the complex business logic themselves. A manager asks Claude to draft meeting notes but personally reviews action items before sharing |
+| **Description** | Clearly communicating what you want — defining outputs, guiding the process, specifying behavior | Instead of *"Write a report"*, you say *"Write a 1-page executive summary of Q1 sales data, use bullet points, compare to Q4, highlight risks in bold"* |
+| **Discernment** | Critically evaluating AI outputs for quality, accuracy, and appropriateness | A developer reviews Claude's suggested SQL query and catches that it doesn't handle NULL values. A writer notices Claude's summary misses a key data point from the uploaded report |
+| **Diligence** | Using AI responsibly — maintaining transparency, taking accountability for AI-assisted work | Telling your team *"I used Claude to draft this analysis and reviewed it for accuracy"* rather than presenting AI output as entirely your own work |
+
+---
+
+### Evaluating Claude for your workflows
+
+As you integrate Claude into more of your work, you need to know: **is Claude actually good at this task?** Here's a simple evaluation approach:
+
+| Step | What to do | Example |
+|------|-----------|---------|
+| **1. Gather examples** | Collect 5-10 examples of a task you do regularly | Emails you've written, reports you've created, code reviews you've done |
+| **2. Create test prompts** | Write prompts that would generate similar outputs, including the context you'd naturally have | *"Review this C# controller for performance issues. Here's the code..."* |
+| **3. Compare outputs** | Run your prompts and evaluate: Does it capture key info? Is the tone right? What's missing? | Claude's code review catches the N+1 query but misses the missing `CancellationToken` |
+| **4. Refine your approach** | Adjust prompts, add examples, or identify where human review is essential | Add *"Also check for missing cancellation tokens and proper disposal"* to future prompts |
+
+> **Key insight:** Evaluation is ongoing, not one-time. As you learn what Claude handles well and where it needs guidance, your prompts and workflows will naturally improve.
 
 [Back to top](#table-of-contents)
 
