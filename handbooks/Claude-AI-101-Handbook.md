@@ -271,7 +271,34 @@ After task:
         └── summary.xlsx
 ```
 
-- **No copy** — VM reads/writes directly to your shared folder
+#### What does "mount" mean?
+
+Mount = giving the VM **a door** into one specific folder on your hard drive. Not a copy — both your Mac and the VM point to the **same files on disk**.
+
+```
+Your Mac's Disk
+  └── Q1-Reports/       ← physical files live HERE on your hard drive
+         ↑                        ↑
+         |                        |
+    Your Mac sees it          VM also sees it
+    as C:/Users/you/          as /mnt/shared/
+    Q1-Reports/               Q1-Reports/
+```
+
+Think of it as a **room with two doors** — Door 1 is your Mac, Door 2 is the VM. Both open to the same room. If Claude moves a chair (renames a file) through Door 2, you see it moved through Door 1 — because it's the same room.
+
+**Why is it still safe?** The VM only has a door to the one folder you shared. Everything else is walled off:
+
+```
+Your Mac
+  ├── Desktop/          ← VM has NO door to this
+  ├── Documents/        ← VM has NO door to this
+  ├── .ssh/keys         ← VM has NO door to this
+  └── Q1-Reports/       ← VM has a door to ONLY this
+```
+
+**Key points:**
+- **No copy** — VM reads/writes directly to your shared folder, changes are instant
 - **Scoped** — Claude can only touch that one folder, nothing else on your machine
 - **Real changes** — if Claude renames files wrong, those files are actually renamed. The safety is about **scope** (only this folder), not about reverting changes
 
