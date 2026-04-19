@@ -553,13 +553,42 @@ Another example: `/updateclaudemd CI/CD only` → `"CI/CD only"` is the argument
 
 ### Frontmatter options
 
-| Field | What it does | Available in |
-|-------|-------------|-------------|
-| `description` | Shows in command list | Both |
-| `argument-hint` | Placeholder text for arguments | Both |
-| `allowed-tools` | Auto-approve specific tools | Both |
-| `model` | Override the model for this command | Both |
-| `name` | Must match folder name | Skills only |
+**Commands frontmatter** (`.claude/commands/*.md`):
+
+| Field | What it does |
+|-------|-------------|
+| `description` | Shows in command list |
+| `argument-hint` | Placeholder text showing what arguments to pass |
+| `allowed-tools` | Pre-approve listed tools (Claude uses them without asking you) |
+| `model` | Override the model (e.g., `claude-sonnet-4-6`) |
+
+**Skills frontmatter** (`.claude/skills/*/SKILL.md`) — all command fields plus:
+
+| Field | What it does | Example |
+|-------|-------------|---------|
+| `name` | Must match folder name | `review-csharp` |
+| `description` | Helps Claude decide when to auto-load/trigger | `"Reviews C# code for best practices"` |
+| `disable-model-invocation: true` | Prevents auto-trigger — only runs when you type `/name` | Safety for skills with side effects like commits |
+| `user-invocable: false` | Hides from `/` menu — Claude can still reference it as background knowledge | For reference skills, not action skills |
+| `context: fork` | Runs in a separate subagent — isolated from your current conversation | Self-contained workflows that produce lots of output |
+| `version` | Version tracking (metadata only) | `"1.0.0"` |
+| `mode: true` | Marks as a "mode command" — modifies Claude's behavior/context | Appears in special "Mode Commands" section |
+
+**Useful combinations:**
+
+| What you want | Fields to use |
+|--------------|---------------|
+| Manual-only skill with supporting files | `disable-model-invocation: true` |
+| Background knowledge Claude can reference but user can't invoke | `user-invocable: false` |
+| Heavy skill that shouldn't pollute your chat | `context: fork` |
+| Auto-approve git commands without prompting | `allowed-tools: Bash(git add *) Bash(git commit *) Bash(git status *)` |
+
+**Important about `allowed-tools`:**
+- It **pre-approves** listed tools — it does NOT restrict which tools are available
+- Every other tool remains callable, your permission settings still govern unlisted tools
+- To **block** a skill from using certain tools, add deny rules in your permission settings instead
+
+> Sources: [Claude Code Docs - Skills](https://code.claude.com/docs/en/skills) | [Claude Skills Deep Dive](https://leehanchung.github.io/blogs/2025/10/26/claude-skills-deep-dive/) | [Claude Skills Complete Guide](https://fraway.io/blog/claude-code-skills-guide/)
 
 [Back to top](#table-of-contents)
 
