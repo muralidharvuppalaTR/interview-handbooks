@@ -497,7 +497,53 @@ You can sort by **Activity** (most recent) or other criteria using the Sort drop
 
 ### Feature 4: Artifacts
 
-*Coming soon — detailed walkthrough*
+Standalone, interactive outputs that Claude creates in a **dedicated panel alongside your chat**. Instead of code or text buried in the conversation, you see content rendered and ready to use.
+
+#### When does Claude create an Artifact?
+
+Automatically, when the content is:
+- Significant and self-contained (typically 15+ lines)
+- Something you'll likely edit, iterate on, or reuse
+- Complex enough to stand on its own outside the conversation
+
+> If Claude doesn't auto-create one, ask: *"Create this as an artifact"* or *"Show me this in an artifact."*
+
+#### Artifact types
+
+| Type | What it creates | Example use |
+|------|----------------|-------------|
+| **Documents** | Markdown, plain text, Word, PDF, PowerPoint, Excel | Reports, meeting notes, blog posts, project plans |
+| **Code snippets** | Working code in any language (Python, JS, C#, etc.) | Copy or download code for your project |
+| **HTML pages** | Complete web pages with HTML/CSS/JS | Landing pages, forms, interactive demos, prototypes |
+| **SVG images** | Scalable vector graphics | Logos, icons, illustrations |
+| **Mermaid diagrams** | Flowcharts, sequence diagrams, Gantt charts, org charts | Visualize processes, architecture, timelines |
+| **React components** | Interactive UI with real logic | Calculators, dashboards, games, data visualizations |
+
+#### Working with Artifacts
+
+Once generated, the artifact appears in a panel to the right of your chat:
+
+| Action | How |
+|--------|-----|
+| **Preview** | See the rendered output (how it looks) |
+| **View code** | Toggle to see the underlying code |
+| **Copy** | Click copy icon to grab content |
+| **Download** | Save as a file to your computer |
+| **Edit & iterate** | Ask Claude to modify — *"Make the header blue"* or *"Add a footer section"* |
+
+#### Sharing & Publishing
+
+| Option | Who can see | Available on |
+|--------|-----------|-------------|
+| **Copy / Download** | Just you | All plans |
+| **Share within org** | Team members (requires authentication) | Team & Enterprise |
+| **Publish publicly** | Anyone with the link (no account needed) | Free, Pro, Max |
+
+When you publish:
+- Only the selected version becomes public — your chat stays private
+- Others can **remix** your artifact — open it in their own Claude conversation to modify
+- Not indexed by search engines
+- You can unpublish at any time
 
 ---
 
