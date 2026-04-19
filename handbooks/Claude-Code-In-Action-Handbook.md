@@ -526,11 +526,21 @@ claude mcp add playwright npx @playwright/mcp@latest
 claude mcp add --scope project playwright npx @playwright/mcp@latest
 ```
 
-This auto-saves config to `~/.claude.json` (global) or `.claude/settings.json` (project).
+This auto-saves config to `~/.claude.json` (global) or `.mcp.json` (project).
 
-You can also configure manually in `.claude/settings.json`:
+**Important:** MCP config goes in `.mcp.json`, NOT `.claude/settings.json`. They are separate:
+
+| File | What it configures | Example |
+|------|-------------------|---------|
+| `.mcp.json` | MCP servers — external tools Claude can use | Playwright, code scanner, database |
+| `.claude/settings.json` | Claude Code behavior — permissions, model, hooks | Allow rules, thinking mode |
+
+`.mcp.json` can be committed to the repo (shared with team). `settings.json` is personal preferences.
+
+You can also configure manually in `.mcp.json`:
 
 ```json
+// .mcp.json (in project root)
 {
   "mcpServers": {
     "playwright": {
