@@ -231,7 +231,49 @@ Designed for **software engineers**. Claude Code with a desktop UI — deeper ac
 | **Who it's for** | Everyone | Non-developers | Developers |
 | **File access** | No local files (upload only) | Specific folder via VM | Full codebase |
 | **Safety** | Sandboxed | Safest (isolated VM) | Most open (direct access) |
+| **Boundary** | N/A | Hard — VM enforced, physically cannot see outside shared folder | Soft — starts in your folder, can access anywhere if asked |
+| **Who enforces it** | N/A | Operating system (VM) | You (approve/deny each action) |
 | **Best for** | Quick questions, writing, brainstorming | Reports, research, file organization | Building and shipping software |
+
+> **One line summary:** Cowork **can't** leave the folder. Claude Code **won't** unless you let it.
+
+### Cowork vs Code — practical examples
+
+| Scenario | Cowork | Code |
+|----------|--------|------|
+| *"Organize my 50 PDFs by client name into subfolders"* | Yes — perfect fit | Overkill |
+| *"Fix the N+1 query in our EF Core repo"* | No — can't access codebase | Yes |
+| *"Create a weekly report from these Excel files"* | Yes | Overkill |
+| *"Add dark mode to our Angular app"* | No — needs full project access | Yes |
+| *"Research competitors and write a summary doc"* | Yes | Not designed for this |
+| *"Resolve merge conflicts in my PR"* | No — no git access | Yes |
+
+### How Cowork accesses your files
+
+Cowork **mounts** your shared folder directly into the VM — like plugging in a USB drive. There's no copy step. Changes happen in real-time on your actual files.
+
+```
+Your Mac
+  └── Q1-Reports/          ← you share this folder with Cowork
+        ├── report1.pdf
+        └── report2.pdf
+
+During task (VM mounts the same folder):
+  └── Q1-Reports/          ← Claude renames, sorts, creates files here
+        ├── APAC/
+        │   └── ClientA-Q1-Report.pdf
+        └── summary.xlsx
+
+After task:
+  └── Q1-Reports/          ← changes are already on your real files
+        ├── APAC/
+        │   └── ClientA-Q1-Report.pdf
+        └── summary.xlsx
+```
+
+- **No copy** — VM reads/writes directly to your shared folder
+- **Scoped** — Claude can only touch that one folder, nothing else on your machine
+- **Real changes** — if Claude renames files wrong, those files are actually renamed. The safety is about **scope** (only this folder), not about reverting changes
 
 [Back to top](#table-of-contents)
 
