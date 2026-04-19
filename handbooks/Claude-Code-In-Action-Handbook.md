@@ -9,6 +9,7 @@
 
 - [What is Claude Code?](#what-is-claude-code)
 - [How Coding Assistants Work](#how-coding-assistants-work)
+  - [The Harness — the magic layer](#the-harness--the-magic-layer)
   - [The Tool Use system](#the-tool-use-system)
   - [Why Claude's tool use matters](#why-claudes-tool-use-matters)
 - [Setting Up Claude Code](#setting-up-claude-code)
@@ -70,21 +71,48 @@ Task → Language Model → Gather context → Formulate a plan → Take action 
 | **Take action** | Implement the fix | Edit the file, run tests to verify |
 | **Iterate** | If tests fail, go back and try again | Adjust the fix, re-run tests |
 
-The first and last steps require interacting with the outside world — reading files, running commands, editing code. This is where **tools** come in.
+The first and last steps require interacting with the outside world — reading files, running commands, editing code. This is where the **harness** and **tools** come in.
+
+### The Harness — the magic layer
+
+Claude the AI model can only **read text and write text**. That's it. It cannot read files, run commands, or edit code by itself.
+
+The **harness** is the program that wraps around Claude and gives it superpowers. Claude Code IS the harness.
+
+```
+You (terminal) ←→ Harness (Claude Code app) ←→ Claude (AI model)
+```
+
+| You do | Harness does | Claude does |
+|--------|-------------|-------------|
+| Type a question | Sends it to Claude + injects CLAUDE.md | Thinks and responds |
+| Type `/review` | Finds the `.md` file, reads it, sends content as prompt | Follows the instructions |
+| Claude says "ReadFile: main.go" | Actually reads the file from disk, sends contents back | Analyzes the file |
+| Claude says "Bash: git diff" | Actually runs `git diff` in terminal, sends output back | Reads the output |
+| Claude says "Edit: fix line 42" | Actually edits the file on disk | Decides what to edit |
+
+**Without the harness**, Claude is just a chatbot that can only talk.
+**With the harness**, Claude can read files, write code, run tests, make commits — because the harness executes actions on Claude's behalf.
+
+This is also how `.claude/` folder files work:
+- You write a `.md` file with instructions in plain English
+- The **harness** reads it and sends it to Claude as a **prompt** — as if you typed that text yourself
+- Claude then uses its tools to follow those instructions
+- The `.md` file is **not a script** — it's a **saved prompt** that the harness manages
 
 ### The Tool Use system
 
-Language models by themselves can only process text and return text — they **can't actually read files or run commands**. Coding assistants solve this with a system called **tool use**.
+Language models by themselves can only process text and return text — they **can't actually read files or run commands**. The harness solves this with a system called **tool use**.
 
 **How it works:**
 
 1. You ask: *"What code is in main.go?"*
-2. The coding assistant adds tool instructions to your request (e.g., *"If you want to read a file, respond with ReadFile: name"*)
-3. The language model responds: `ReadFile: main.go`
-4. The coding assistant **actually reads** the file and sends contents back to the model
-5. The model provides a final answer based on the file contents
+2. The harness adds tool instructions to your request (e.g., *"If you want to read a file, respond with ReadFile: name"*)
+3. Claude responds: `ReadFile: main.go`
+4. The harness **actually reads** the file and sends contents back to Claude
+5. Claude provides a final answer based on the file contents
 
-The model is just generating text — but the assistant **intercepts** tool requests and executes them in the real world. This is how Claude Code can "read files", "write code", and "run commands."
+Claude is just generating text — but the harness **intercepts** tool requests and executes them in the real world. This is how Claude Code can "read files", "write code", and "run commands."
 
 ### Why Claude's tool use matters
 
