@@ -155,11 +155,11 @@
 
 ## Claude Desktop App — Chat, Cowork & Code
 
-The desktop app gives you three ways to work with Claude. All three are powered by Claude Code under the hood but serve different purposes.
+The desktop app gives you three ways to work with Claude. Think of **Cowork as "Claude Code for everyone"** and **Code as "Claude Code for engineers."** All three are powered by Claude Code under the hood.
 
 ### Chat
 
-Same Claude you know from claude.ai, plus desktop-native features:
+Classic Claude conversation — ask questions, write, summarize, brainstorm. No access to local files unless you manually upload them. Plus desktop-native extras:
 - **Quick entry** — launch Claude from anywhere on your computer
 - **Screenshots** — capture and share your screen directly
 - **Dictation** — speak instead of typing
@@ -167,7 +167,7 @@ Same Claude you know from claude.ai, plus desktop-native features:
 
 ### Cowork (Agentic Mode)
 
-Give Claude a goal, connect it to your tools, and let it do the work autonomously. Cowork has the scope to tackle larger, multi-step tasks.
+Designed for **non-developers**. Give Claude a goal in plain language and let it work autonomously — filling out expense reports from receipt photos, writing reports from notes, reorganizing folders.
 
 | Capability | What it does |
 |-----------|-------------|
@@ -181,26 +181,43 @@ Give Claude a goal, connect it to your tools, and let it do the work autonomousl
 | **Dispatch** | Continue Cowork conversations from your phone via the mobile app (requires desktop app open) |
 | **Projects** | Group related tasks into workspaces with their own files, context, instructions, and memory |
 
-> **Security:** Cowork runs in a contained space — Claude can only access folders you explicitly share.
+**How Cowork runs — VM Architecture:**
+
+```
+Your Mac
+  └── Claude Desktop App
+        └── Cowork Tab
+              └── Secure VM (Apple Virtualization Framework)
+                    └── Mounted folder (your files only)
+```
+
+- Runs inside an **isolated Virtual Machine** on your computer — your actual system is fully protected
+- Only accesses the **specific folder** you share, nothing else on your machine
+- Isolated from the wider internet (network restricted to an allowlist)
+- Each session gets an **ephemeral user** that's deleted when the session ends
+- If something goes wrong, it can't affect the rest of your system
+
+> **Availability:** Currently Mac only (uses Apple Virtualization Framework). Requires Max subscription ($100 or $200/month).
 
 ### Code (Development Mode)
 
-Full development environment for building software — same engine as Claude Code CLI but inside the desktop app.
+Designed for **software engineers**. Claude Code with a desktop UI — deeper access to your codebase, can run tests, edit files, execute git commands. More powerful but requires more setup and care.
 
 | Capability | What it does |
 |-----------|-------------|
 | **Full codebase access** | Reads, writes, and modifies code directly in your project |
-| **Visual diffs** | See exactly what changed |
+| **Visual diffs** | See exactly what changed (advantage over terminal Claude Code) |
 | **Built-in terminal** | Commands run and display in real-time |
 | **Multiple sessions** | Run sessions across projects, filter by Active/Archived and Local/Cloud |
 
-### Cowork vs Code
+### Chat vs Cowork vs Code
 
-| | Cowork | Code |
-|-|--------|------|
-| **Scope** | Contained workspace (only shared folders) | Full file system + terminal access |
-| **Best for** | Research, writing, analysis, multi-tool tasks | Building and shipping software |
-| **Engine** | Claude Code (sandboxed) | Claude Code (full access) |
+| | Chat | Cowork | Code |
+|-|------|--------|------|
+| **Who it's for** | Everyone | Non-developers | Developers |
+| **File access** | No local files (upload only) | Specific folder via VM | Full codebase |
+| **Safety** | Sandboxed | Safest (isolated VM) | Most open (direct access) |
+| **Best for** | Quick questions, writing, brainstorming | Reports, research, file organization | Building and shipping software |
 
 [Back to top](#table-of-contents)
 
@@ -374,7 +391,101 @@ Claude can analyze both text and visual elements (like images, charts, and graph
 
 ### Feature 2: Projects
 
-*Coming soon — detailed walkthrough*
+Self-contained workspaces with their own memory, chat histories, knowledge bases, and customized instructions. Ideal for ongoing work — not one-off questions.
+
+#### When to use Projects
+
+- You have **reference materials** you'll use repeatedly (meeting notes, reports, style guides)
+- You need **consistent behavior** from Claude (always formal, always cite sources, always follow a template)
+- Your **team needs shared context** (Claude for Work plans)
+
+#### Setting up a Project
+
+**Step 1: Create the project**
+- Go to **claude.ai/projects** or click "Projects" in the sidebar
+- Click **"+ New Project"** — give it a descriptive name (e.g., "Q4 Marketing Campaign")
+- Add a description and set visibility (private or shared with org)
+
+**Step 2: Add instructions**
+- Click **"Instructions"** to tell Claude how to behave in this project
+- Include: context about the work, process instructions, tone/style preferences, specific requirements
+- Example: *"This project is for our B2B product docs. Use a professional but conversational tone. Always include code examples in C#."*
+- You can also automate workflows: *"When I upload a meeting transcript, create a structured summary using this template."*
+
+**Step 3: Build your knowledge base**
+- Click the **"+"** button to upload files — PDF, DOCX, CSV, TXT, HTML, and more
+- Four ways to add files:
+
+| Source | What it does |
+|--------|-------------|
+| **Upload from device** | Drag & drop or browse local files — PDF, DOCX, CSV, TXT, HTML, images |
+| **Add text content** | Paste text directly as a knowledge entry (no file needed) |
+| **GitHub** | Link a GitHub repo — Claude references your codebase directly |
+| **Google Drive** | Connect and link docs from Google Drive |
+
+- Upload: brand guidelines, research reports, meeting notes, templates, technical docs, examples of work you want Claude to emulate
+
+> **Pro tip:** Name files descriptively — *"Q4-2024-Brand-Guidelines.pdf"* helps Claude find the right info faster than *"document1.pdf"*
+
+#### How Projects handle large knowledge bases
+
+When your uploads approach context limits, Claude automatically enables **RAG (Retrieval Augmented Generation)** — it intelligently searches and retrieves only the most relevant parts of your documents instead of loading everything into memory. This expands capacity by **up to 10x** while maintaining quality.
+
+#### Collaboration (Team & Enterprise)
+
+| Permission | What they can do |
+|-----------|-----------------|
+| **Can view** | See contents, access knowledge, chat — but can't edit |
+| **Can edit** | Modify instructions, update knowledge, manage members |
+| **Owner** | Full control — sharing, visibility, member management |
+
+To share: Open project > Click **"Share project"** > Add members by name/email or share with your entire org.
+
+#### Chat-level context (within a Project)
+
+Inside a project chat, you can add **per-chat files and context** that apply only to that specific conversation — not to the whole project. Use the attachment menu in the chat input:
+
+| Option | What it does |
+|--------|-------------|
+| **Upload a file** | Attach a file for this chat only — doesn't add to the project knowledge base |
+| **Add from GitHub** | Pull a specific repo/file for this conversation |
+| **Add from Google Drive** | Link a doc for this chat only |
+| **Use a project** | Switch or link to a different project's context mid-chat |
+
+You can also see **project capacity used** (e.g., "1% of project capacity used") and the project's files on the right sidebar, along with the project instructions.
+
+> **Key difference:** Project knowledge base = shared across all chats in the project. Chat-level uploads = only available in that specific conversation.
+
+#### Browsing Projects
+
+The Projects page has a search bar and three tabs:
+
+| Tab | What it shows |
+|-----|-------------|
+| **Your projects** | Projects you created |
+| **Team** | Projects shared with your entire organization |
+| **Shared with you** | Projects others have shared with you directly |
+
+You can sort by **Activity** (most recent) or other criteria using the Sort dropdown.
+
+#### Managing Projects
+
+| Action | How |
+|--------|-----|
+| **Favorite** | Click the star icon to pin the project for quick access |
+| **Edit details** | Click **"..."** menu > **Edit details** — change name, description, visibility |
+| **Archive** | Click **"..."** menu > **Archive** — hides the project without deleting it |
+| **Delete** | Click **"..."** menu > **Delete** — permanently removes the project and all its chats |
+| **Report** | Click **"..."** menu > **Report** — flag inappropriate content |
+| **Share** | Click **"Share"** button — add members or make org-wide (Team/Enterprise only) |
+
+#### Best practices
+
+- **Start focused** — one project per use case, expand later
+- **Keep knowledge current** — outdated docs lead to outdated responses
+- **Write clear instructions** — specific beats vague
+- **Name files descriptively** — Claude uses filenames to understand content
+- **Reference docs by name** — *"Based on our Q3 report, what were the top customer concerns?"*
 
 ---
 
