@@ -370,14 +370,39 @@ Each level gives Claude progressively more tokens to work through the problem be
 
 ## Building Custom Slash Commands (Commands & Skills)
 
-Custom commands and skills are **now merged** — both create `/slash-commands` and work the same way. You can use either format:
+Claude Code comes with **built-in commands** (like `/init`, `/help`, `/compact`) that you access by typing `/`. But you can also create **custom commands** to automate tasks you run frequently.
 
-| Format | Path | When to use |
-|--------|------|-------------|
-| **Command** (simple) | `.claude/commands/<name>.md` | Single-file instructions, quick to create |
-| **Skill** (full) | `.claude/skills/<name>/SKILL.md` | Need supporting files (scripts, templates, checklists) |
+**How custom commands work:**
+- Each `.md` file becomes a slash command (e.g., `updateclaudemd.md` → `/updateclaudemd`)
+- They are **prompts sent to Claude, NOT bash scripts** — Claude reads the markdown as instructions and follows them using its own tools
+- Custom commands **cannot** call built-in CLI commands like `/init`, `/help`, `/clear`
+- Built-in commands run in the CLI harness; custom commands run as prompts to the AI
 
-Both formats work. Existing `.claude/commands/` files keep working. Skills add optional extras: a directory for supporting files, frontmatter to control invocation, and auto-loading when relevant.
+Custom commands and skills both create `/slash-commands`, but they have key differences:
+
+| | Commands (`.claude/commands/`) | Skills (`.claude/skills/`) |
+|-|-------------------------------|---------------------------|
+| **File** | Single `.md` file | Folder with `SKILL.md` inside |
+| **Example** | `.claude/commands/update-claude-md.md` | `.claude/skills/review-csharp/SKILL.md` |
+| **What it is** | A prompt — text instructions | A prompt with structured metadata |
+| **Supports `$ARGUMENTS`** | Yes | Yes |
+| **Has description** | No — just the filename | Yes — description shown to Claude |
+| **Auto-trigger** | Never — user must type `/name` | Can trigger automatically when context matches |
+| **Supporting files** | No — single file only | Yes — checklist, examples, scripts alongside SKILL.md |
+
+### The key difference: auto-triggering
+
+- `/review-csharp` as a **skill** — Claude sees its description and can suggest using it when you make C# changes, without you typing `/review-csharp`
+- `/update-claude-md` as a **command** — Claude will never use it unless you explicitly type `/update-claude-md`
+
+### When to use which
+
+| Use case | Use |
+|----------|-----|
+| You always want to invoke it manually | **Command** |
+| You want Claude to suggest/use it automatically based on context | **Skill** |
+
+Both formats work. Existing `.claude/commands/` files keep working.
 
 > If both `.claude/commands/deploy.md` and `.claude/skills/deploy/SKILL.md` exist, the **skill takes precedence**.
 
@@ -387,6 +412,35 @@ Both formats work. Existing `.claude/commands/` files keep working. Skills add o
 |-------|----------|--------|
 | **Project** | `.claude/commands/<name>.md` | `.claude/skills/<name>/SKILL.md` |
 | **Personal** | `~/.claude/commands/<name>.md` | `~/.claude/skills/<name>/SKILL.md` |
+
+### Why skills exist when we already have commands
+
+Commands were built first — simple, one-file prompts. They worked fine for basic tasks. But teams needed more:
+
+| Problem with commands | How skills solve it |
+|----------------------|-------------------|
+| One file only — can't attach checklists, templates, examples | Skill folder holds multiple supporting files |
+| Claude never knows they exist until you type `/name` | Skills have `description` — Claude reads it and can suggest or auto-trigger them |
+| No way to control who invokes it (you or Claude) | Skills have frontmatter to specify user-invoked, Claude-invoked, or both |
+| Just a prompt — no metadata | Skills have structured frontmatter for model override, allowed tools, etc. |
+
+**The killer feature is auto-triggering.** You have a skill with description `"Reviews C# code for best practices"`. You make C# changes and say `"I'm done"`. Claude sees the description, realizes the skill is relevant, and suggests running it — without you typing `/review-csharp`. Commands can never do this.
+
+- **Commands** = you remember to use them
+- **Skills** = Claude remembers to use them
+
+Anthropic added skills to make Claude **proactive**, not just reactive.
+
+### The `.md` file: Commands vs Skills
+
+The actual prompt content is identical in both — it's what wraps around it that differs:
+
+| | `commands/review.md` | `skills/review/SKILL.md` |
+|-|---------------------|-------------------------|
+| **Filename** | Any name — becomes the command name | Must be `SKILL.md` (uppercase) |
+| **Frontmatter** | Optional — `description`, `argument-hint`, `allowed-tools`, `model` | Same + **required** `name` field (must match folder name) |
+| **Supporting files** | None — single file only | Can reference `checklist.md`, `examples.md`, etc. in same folder |
+| **Auto-trigger** | No — only runs when you type `/name` | Yes — Claude can invoke it automatically based on `description` |
 
 ### Option 1: Simple command (single file)
 
@@ -411,30 +465,46 @@ Type `/review` in Claude Code to invoke it.
 ### Option 2: Skill (folder with resources)
 
 ```
-.claude/skills/review/
-├── SKILL.md            ← entry point
-├── checklist.md         ← reference docs
-└── scripts/
-    └── lint-check.sh    ← helper scripts
+.claude/skills/review-csharp/
+├── SKILL.md            ← required — the main prompt/instructions
+├── checklist.md         ← custom review checklist with team-specific rules
+├── examples.md          ← good/bad code examples for the reviewer
+├── patterns.md          ← approved patterns (DI, error handling, etc.)
+└── ignore-list.md       ← files or patterns to skip during review
 ```
 
-**File:** `.claude/skills/review/SKILL.md`
+**File:** `.claude/skills/review-csharp/SKILL.md`
 
 ```markdown
 ---
-name: review
-description: Reviews code for best practices and potential issues
+name: review-csharp
+description: Reviews C# code changes for best practices, bugs, and team patterns
 ---
 
-When reviewing code, follow the checklist in @checklist.md.
-Run @scripts/lint-check.sh for automated checks.
+Review C# code changes for quality, bugs, and team standards.
+
+Refer to checklist.md for the full review checklist.
+Refer to examples.md for approved code patterns.
+Refer to patterns.md for DI and error handling standards.
+Skip any files listed in ignore-list.md.
 ```
 
-> **Key rule:** Folder name must match `name` in frontmatter — both must be `review`.
+Claude can read all these supporting files during the review for more context.
+
+> **Key rule:** Folder name must match `name` in frontmatter — both must be `review-csharp`.
 
 ### Using arguments
 
-Use `$ARGUMENTS` to pass input:
+Custom commands can accept arguments using the `$ARGUMENTS` placeholder, making them flexible and reusable.
+
+**How `$ARGUMENTS` works:**
+
+| Scenario | What happens |
+|----------|-------------|
+| **Without** `$ARGUMENTS` in `.md` | User's args are appended at the end of the prompt automatically |
+| **With** `$ARGUMENTS` in `.md` | User's args are placed exactly where you put the placeholder |
+
+Both work — `$ARGUMENTS` just gives you more control over positioning.
 
 **File:** `.claude/commands/commit.md`
 
@@ -449,6 +519,9 @@ Create a git commit with message: $ARGUMENTS
 ```
 
 Usage: `/commit Fix the null reference bug in UserController`
+- Here `Fix the null reference bug in UserController` replaces `$ARGUMENTS`
+
+Another example: `/updateclaudemd CI/CD only` → `"CI/CD only"` is the argument passed to the command
 
 ### Frontmatter options
 
