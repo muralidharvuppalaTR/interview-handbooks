@@ -273,7 +273,7 @@ After task:
 
 #### What does "mount" mean?
 
-Mount = giving the VM **a door** into one specific folder on your hard drive. Not a copy — both your Mac and the VM point to the **same files on disk**.
+Mount = giving the VM **a door** into one specific folder on your hard drive. Not a copy — both your Mac and the VM point to the **same files on disk**. Cowork uses **VirtioFS** (Mac) or **Plan 9** (Windows) — high-performance file sharing protocols designed for VMs.
 
 ```
 Your Mac's Disk
