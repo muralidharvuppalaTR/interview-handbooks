@@ -44,13 +44,16 @@ jobs:
           # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # anthropic_base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
 
-          # Option 4 (active): API Key with LiteLLM proxy using native base_url input
-          # LiteLLM key only works when routed through the proxy, so base_url is required.
-          # Without base_url, requests go to Anthropic directly → "Invalid API key" error.
-          # base_url is a native action input added in claude-code-action v1 (see:
-          # https://github.com/anthropics/claude-code-action/issues/840)
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
+          # Option 4: API Key with LiteLLM proxy using base_url input
+          # NOT YET IMPLEMENTED — issue #840 still open
+          # https://github.com/anthropics/claude-code-action/issues/840
+          # anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
+
+          # Option 5 (active): OAuth token from claude login
+          # Uses your Claude enterprise subscription directly — bypasses LiteLLM entirely
+          # Token from ~/.claude/.credentials.json > claudeAiOauth.accessToken
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
           additional_permissions: |
             actions: read
