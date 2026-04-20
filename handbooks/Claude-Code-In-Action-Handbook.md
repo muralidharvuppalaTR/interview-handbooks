@@ -896,16 +896,30 @@ The app being installed just means Claude has permission. Without the workflow f
 
 #### Authentication
 
-The workflow needs a secret to authenticate with Claude:
+The workflow needs a secret to authenticate with Claude. There are four options:
 
-| Option | Secret | How it works |
-|--------|--------|-------------|
-| **OAuth (default)** | `CLAUDE_CODE_OAUTH_TOKEN` | Auto-created by `/install-github-app` — uses your Claude subscription |
-| **API Key** | `ANTHROPIC_API_KEY` | Manual setup — uses direct API key or LiteLLM proxy |
+| Option | Secrets needed | When to use |
+|--------|---------------|-------------|
+| **1. OAuth token (default)** | `CLAUDE_CODE_OAUTH_TOKEN` | Auto-created by `/install-github-app` — uses your Claude subscription |
+| **2. API Key only** | `ANTHROPIC_API_KEY` | Direct Anthropic API key (not LiteLLM) |
+| **3. API Key + `anthropic_base_url`** | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Does NOT work — `anthropic_base_url` is not a valid action input, causes warning |
+| **4. API Key + `base_url` (recommended for LiteLLM)** | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Native action input — routes requests through LiteLLM proxy |
 
-`CLAUDE_CODE_OAUTH_TOKEN` is created when you sign in via `claude login`. The `/install-github-app` command saves it as a GitHub secret automatically.
+**OAuth token:** `CLAUDE_CODE_OAUTH_TOKEN` is created when you sign in via `claude login`. The `/install-github-app` command saves it as a GitHub secret automatically.
 
-For **enterprise/LiteLLM** setups, you may need `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` pointing to your proxy instead.
+**LiteLLM enterprise setup:** A LiteLLM key (e.g., `sk-gMuyCJ...`) only works when requests are routed through the proxy. Without `base_url`, the action sends requests directly to Anthropic → "Invalid API key" error.
+
+Example workflow for LiteLLM:
+```yaml
+- uses: anthropics/claude-code-action@v1
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
+```
+
+Add these secrets at: `Settings > Secrets > Actions > New repository secret`
+
+**Note:** If your org (e.g., `tr`) has `ANTHROPIC_API_KEY` set at org level as a direct Anthropic key, you only need `anthropic_api_key` — no `base_url` required. That's why some org repos work without it.
 
 #### Org-level vs personal installation
 
