@@ -736,11 +736,88 @@ After adding Playwright MCP, Claude Code gets 26+ browser automation tools. You 
 
 **Requirement:** Node.js 18+ (LTS)
 
-### Other MCP examples
+### Exploring other MCP servers
 
-- *"Query the users table and show me the last 10 signups"* (database MCP)
-- *"Call our internal API and check the health endpoint"* (API MCP)
-- *"Scan this project for security vulnerabilities"* (code scanning MCP)
+Playwright is just one example. The MCP ecosystem includes servers for many use cases:
+
+| Category | What Claude can do | Example prompt |
+|----------|-------------------|----------------|
+| **Database** | Query tables, analyze data, check schemas (see below for setup options) | *"Query the users table and show me the last 10 signups"* |
+| **API testing** | Call endpoints, check health, test responses | *"Call our internal API and check the health endpoint"* |
+| **File system** | Extended file operations beyond basic read/write | *"Find all files modified in the last 24 hours"* |
+| **Cloud services** | Interact with AWS, Azure, GCP resources | *"List all S3 buckets and their sizes"* |
+| **Code scanning** | Find and fix security vulnerabilities | *"Scan this project for security vulnerabilities"* |
+| **Dev tools** | Docker, CI/CD, monitoring integration | *"Check the status of our latest CI pipeline"* |
+
+### Database access: MCP vs sqlcmd
+
+There are two ways to give Claude Code database access:
+
+**Option 1: MCP server** (SQL login — username/password)
+
+```json
+// .mcp.json
+{
+  "mcpServers": {
+    "mssql": {
+      "command": "node",
+      "args": ["<path-to>/mssql-mcp-node/index.js"],
+      "env": {
+        "MSSQL_HOST": "your-server",
+        "MSSQL_DATABASE": "YourDB",
+        "MSSQL_USER": "sa",
+        "MSSQL_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+- Read-only (SELECT only) for safety
+- Nicer interface — Claude gets dedicated database tools
+- Does **NOT** support Windows Authentication
+
+**Option 2: sqlcmd via Bash** (Windows Auth — no password needed)
+
+No setup required — just ask Claude:
+> *"Run a query on PayVestDB to show me all tables"*
+
+Claude uses `sqlcmd -E` which uses your Windows login automatically:
+
+```bash
+sqlcmd -S "TR-1L0XML3\SQL2022" -d PayVestDB -E -Q "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES"
+```
+
+- Supports Windows Authentication
+- Full read/write access (be careful!)
+- No MCP setup needed — works out of the box
+
+**Which to use:**
+
+| Scenario | Use |
+|----------|-----|
+| Corporate SQL Server with Windows Auth | **sqlcmd** — MCP servers don't support Windows Auth |
+| Cloud/remote DB with SQL login | **MCP server** — nicer interface, read-only safety |
+| Quick one-off queries | **sqlcmd** — zero setup |
+
+> **Tip:** If using sqlcmd, you can add to your `CLAUDE.md`: *"When querying the database, use `sqlcmd -S TR-1L0XML3\SQL2022 -d PayVestDB -E`"* — so Claude always uses the right connection.
+
+### Managing MCP permissions
+
+When you first use MCP tools, Claude asks for permission each time. To pre-approve an MCP server, edit `.claude/settings.local.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["mcp__playwright"],
+    "deny": []
+  }
+}
+```
+
+> Note the **double underscores** in `mcp__playwright`. This naming convention applies to all MCP servers: `mcp__<server-name>`.
+
+This lets Claude use Playwright tools without asking every time. Use `deny` to block specific MCP tools if needed.
 
 ### Managing MCP servers
 
