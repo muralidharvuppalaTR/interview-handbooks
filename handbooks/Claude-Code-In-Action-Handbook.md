@@ -835,9 +835,11 @@ claude mcp remove playwright
 
 ## GitHub Integration
 
-Claude Code integrates with GitHub for automated workflows.
+Claude Code integrates with GitHub in two ways: **locally** (PR workflows from your terminal) and **remotely** (GitHub Actions bot that auto-reviews PRs and responds to mentions).
 
-### PR workflows
+### Local PR workflows
+
+From your terminal, Claude Code can work with GitHub directly:
 
 ```bash
 # Create a PR
@@ -848,31 +850,100 @@ Claude Code integrates with GitHub for automated workflows.
 
 # Fix PR review comments
 > Fix the review comments on PR #123
-```
 
-### Automated PR reviews
-
-Set up Claude Code to automatically review PRs using GitHub Actions:
-
-```yaml
-# .github/workflows/claude-review.yml
-name: Claude Code Review
-on: [pull_request]
-jobs:
-  review:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: anthropics/claude-code-action@v1
-        with:
-          prompt: "Review this PR for code quality, bugs, and security issues"
-```
-
-### Issue-to-PR workflow
-
-```bash
 # Claude reads a GitHub issue and creates a fix
 > Fix issue #42 — create a branch, implement the fix, write tests, and open a PR
 ```
+
+### Claude Code GitHub App
+
+The Claude Code GitHub App adds Claude as a **bot on your GitHub repo**. It can:
+- Automatically review PRs
+- Respond to `@claude` mentions in issues and PR comments
+- Run as a GitHub Action triggered by events
+
+This is different from using Claude Code locally — the bot runs on GitHub's servers, not your machine.
+
+#### Installing the GitHub App
+
+Run `/install-github-app` in Claude Code. This command:
+1. Opens a browser to install the Claude Code app on GitHub
+2. You choose **specific repos** (not your entire account)
+3. Adds your API key as a GitHub secret
+4. Creates a PR with two workflow files
+
+You can add/remove repos later from **GitHub > Settings > Applications**.
+
+#### What gets created
+
+The PR adds two workflow files to `.github/workflows/`:
+
+| File | What it does |
+|------|-------------|
+| `claude.yml` | Responds when you tag `@claude` in issues or PR comments |
+| `claude-code-review.yml` | Automatic code review on every new PR |
+
+Once you **merge that PR**, both workflows are active.
+
+#### App install vs workflow files — two separate steps
+
+| Step | What it does | Who does it |
+|------|-------------|-------------|
+| **1. Install Claude App** | Gives Claude **permission** to access your repos | Org admin or you (one-time) |
+| **2. Add workflow files** | Tells GitHub **when** to trigger Claude | You — via `/install-github-app` or manually |
+
+The app being installed just means Claude has permission. Without the workflow files, nothing happens.
+
+#### Authentication
+
+The workflow needs a secret to authenticate with Claude:
+
+| Option | Secret | How it works |
+|--------|--------|-------------|
+| **OAuth (default)** | `CLAUDE_CODE_OAUTH_TOKEN` | Auto-created by `/install-github-app` — uses your Claude subscription |
+| **API Key** | `ANTHROPIC_API_KEY` | Manual setup — uses direct API key or LiteLLM proxy |
+
+`CLAUDE_CODE_OAUTH_TOKEN` is created when you sign in via `claude login`. The `/install-github-app` command saves it as a GitHub secret automatically.
+
+For **enterprise/LiteLLM** setups, you may need `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` pointing to your proxy instead.
+
+#### Org-level vs personal installation
+
+If your org already installed the Claude app:
+
+| Scenario | What to do |
+|----------|-----------|
+| Repo is under your **org** | App already has access — just add workflow files |
+| Repo is under your **personal account** | Install the app separately from [github.com/apps/claude](https://github.com/apps/claude) |
+| You see "insufficient access" when configuring | The app was installed by org admin — only they can modify it |
+
+#### Common issues
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| **"Commits must have verified signatures"** (HTTP 409) | Org requires signed commits — `/install-github-app` can't satisfy this | Create workflow files **manually** and push them yourself |
+| **"IP address not in allowed range"** | Org restricts pushes to approved IPs | Connect to corporate VPN or push from office network |
+| **`ANTHROPIC_API_KEY` is empty** in workflow logs | Secret not set in repo | Add it at `Settings > Secrets > Actions > New repository secret` |
+| **Workflow skipped** | Event didn't match trigger condition (e.g., comment without `@claude`) | Normal — not an error |
+
+#### Uninstalling
+
+To remove the Claude GitHub App:
+1. Go to **GitHub.com > Settings > Applications**
+2. Find **Claude Code** > Click **Configure**
+3. Scroll down > Click **Uninstall**
+
+To remove the workflow files:
+```bash
+rm .github/workflows/claude.yml .github/workflows/claude-code-review.yml
+git add -A && git commit -m "Remove Claude GitHub Actions" && git push
+```
+
+#### Testing
+
+After setup, test by:
+- **Creating a new PR** → Claude auto-reviews it
+- **Commenting `@claude` on any issue/PR** → Claude responds
 
 [Back to top](#table-of-contents)
 
