@@ -1224,17 +1224,23 @@ Two fixes to keep cost down:
 **1. Cap turns** — prevents runaway sessions when Claude keeps hitting denials:
 ```yaml
 claude_args: >-
-  --max-turns 15
+  --max-turns 15       # max agent loop iterations before Claude stops (default: unlimited)
+                       # each "turn" = one Claude think+act cycle; denials waste turns retrying
   --allowedTools "..."
 ```
 
 **2. Add the tools Claude commonly tries** — stops denials before they happen. The most common ones missed are `ls`, `cat`, and `gh pr review`:
 ```yaml
---allowedTools "Read,Glob,Grep,
-  Bash(git diff:*),Bash(git log:*),Bash(git show:*),
-  Bash(ls:*),Bash(cat:*),
-  Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh api:*),
-  mcp__github_inline_comment__create_inline_comment"
+--allowedTools "
+  Read,Glob,Grep,                                        # read local files checked out by the runner
+  Bash(git diff:*),Bash(git log:*),Bash(git show:*),     # inspect git history and diffs locally
+  Bash(ls:*),Bash(cat:*),                                # explore directory structure and file contents
+  Bash(gh pr diff:*),Bash(gh pr view:*),                 # fetch PR diff and description via GitHub CLI
+  Bash(gh pr comment:*),                                 # post top-level summary comment on the PR
+  Bash(gh pr review:*),                                  # post a formal GitHub review (approve/request changes)
+  Bash(gh api:*),                                        # call GitHub REST API directly if needed
+  mcp__github_inline_comment__create_inline_comment      # post inline comment on a specific diff line
+"
 ```
 
 > **Note:** `permission_denials_count` being non-zero is not always a failure — if the review output is correct, denials are just Claude trying extra things it worked around. Only investigate if the review output is missing or wrong.
