@@ -1013,13 +1013,46 @@ cat ~/.claude/credentials.json   # claudeAiOauth.accessToken is the value for CL
 
 > **Note:** The OAuth token auto-rotates when you use Claude Code locally. If the runner starts failing auth errors after working previously, re-copy the `accessToken` from `credentials.json` into the GitHub secret.
 
-**Runner setup summary:**
+**Runner setup summary (confirmed by testing):**
 
-| Runner | Works? | Why |
-|--------|--------|-----|
-| `ubuntu-latest` | ❌ | IP restriction with enterprise OAuth token |
-| `[self-hosted, Windows]` | ❌ | bun Windows file handle bug |
-| `[self-hosted, Linux]` (WSL2) | ✅ | Linux + same machine network |
+| Runner | Works? | Failure point | Notes |
+|--------|--------|---------------|-------|
+| `[self-hosted, Linux]` (WSL2) | ✅ | — | Linux + TR network + LiteLLM reachable |
+| `ubuntu-latest` | ❌ | LiteLLM unreachable | Outside TR network — can't reach internal LiteLLM proxy |
+| `macos-latest` | ❌ | LiteLLM unreachable | Outside TR network — same reason as ubuntu-latest |
+| `[self-hosted, Windows]` | ❌ | bash path bug → Claude Code CLI install blocks Windows | WSL bash used instead of Git bash; even if fixed, CLI installer rejects Windows |
+| `windows-latest` | ❌ | Claude Code CLI install blocks Windows | Installer script says "Windows is not supported" |
+
+> **Important distinction:** Claude Code CLI itself **does** support Windows (via PowerShell, WinGet, npm). But `claude-code-action` internally uses the Linux bash installer script (`install.sh`) which explicitly blocks Windows. These are two different things — Claude.ai docs saying "Windows is supported" refers to the CLI, not the action.
+
+**`workflow_dispatch` — test different runners without changing the file:**
+
+Add `workflow_dispatch` with a runner input to test from the GitHub UI:
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner to use'
+        required: true
+        default: '["self-hosted", "Linux"]'
+        type: choice
+        options:
+          - '["self-hosted", "Linux"]'    # WSL2 — works
+          - '["self-hosted", "Windows"]'  # Windows — fails
+          - '"ubuntu-latest"'             # GitHub-hosted — LiteLLM unreachable
+          - '"windows-latest"'            # GitHub-hosted Windows — CLI install fails
+          - '"macos-latest"'              # GitHub-hosted macOS — LiteLLM unreachable
+
+jobs:
+  claude:
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted", "Linux"]') }}
+```
+
+> **Note:** GitHub-hosted runner names (`ubuntu-latest`, `windows-latest`, `macos-latest`) must be wrapped in JSON quotes (`'"ubuntu-latest"'`) when used as `workflow_dispatch` choice options with `fromJSON`. Plain strings cause: `Error from function 'fromJSON': Unexpected symbol: 'ubuntu-latest'`.
+
+> **Note:** `workflow_dispatch` on `claude.yml` will show `Trigger result: false` — this is normal. That workflow is designed for `@claude` comment triggers, not manual runs. Use it only to test runner compatibility, not actual Claude responses.
 
 #### Common issues
 
@@ -1031,10 +1064,14 @@ cat ~/.claude/credentials.json   # claudeAiOauth.accessToken is the value for CL
 | **"Workflow validation failed. Workflow file must match default branch"** | First PR that adds the review workflow — workflow on PR branch doesn't match main yet | Expected and safe to ignore — resolves automatically once the PR is merged to main |
 | **`ANTHROPIC_API_KEY` is empty** in workflow logs | Secret not set in repo, or org-level secret not scoped to this repo | Add `CLAUDE_CODE_OAUTH_TOKEN` as repo-level secret instead |
 | **`/bin/bash: C:actions-runner_work_temp...sh: No such file or directory`** | Windows runner using WSL bash instead of Git bash | Switch to `[self-hosted, Linux]` (WSL2) — Windows runner not supported |
-| **`directory mismatch... fd [handle]`** | Bun file handle bug on Windows | Switch to `[self-hosted, Linux]` (WSL2) — not fixable on Windows |
+| **`directory mismatch... fd [handle]`** | Bun file handle bug on Windows (or harmless bun warning on Linux) | On Windows: switch to `[self-hosted, Linux]`. On Linux: ignore — message says "you don't need to do anything" |
+| **`Windows is not supported by this script`** | `claude-code-action` uses Linux bash installer internally — rejects Windows | Use `[self-hosted, Linux]` (WSL2). Note: Claude Code CLI itself supports Windows, but the action's installer does not |
+| **`Unable to connect to API (FailedToOpenSocket)`** | Runner outside TR network — can't reach internal LiteLLM proxy | Use `[self-hosted, Linux]` (WSL2) which is on TR network |
+| **`Error from function 'fromJSON': Unexpected symbol: 'ubuntu-latest'`** | GitHub-hosted runner names must be valid JSON strings in `workflow_dispatch` choices | Wrap in JSON quotes: `'"ubuntu-latest"'` instead of `ubuntu-latest` |
+| **`workflow_dispatch` runs but `Trigger result: false`** | `claude.yml` requires a `@claude` comment trigger — `workflow_dispatch` has no comment context | Normal for runner testing — use it only to confirm the runner works, not to trigger Claude responses |
 | **Workflow skipped** | Comment didn't contain `@claude` | Normal — add `@claude` to the comment body |
-| **`@claude` shows org team suggestions** | GitHub autocomplete treating `@` as a mention | Press Escape to dismiss dropdown — plain text `@claude` is enough |
-| **`base_url` input not working** | Not yet implemented in `claude-code-action` (issue #840) | Use LiteLLM env vars approach (Option 5) — set `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` via `env:` block |
+| **`@claude` shows org team suggestions** | GitHub autocomplete treating `@` as a mention — Claude GitHub App not installed on this repo | Press Escape to dismiss dropdown — plain text `@claude` is enough. App install shows `claude` in autocomplete |
+| **`base_url` input not working** | Not yet implemented in `claude-code-action` (issue #840) | Use LiteLLM env vars approach (Option 3) — set `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` via `env:` block |
 
 #### Uninstalling
 
