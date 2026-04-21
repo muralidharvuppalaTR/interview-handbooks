@@ -1208,9 +1208,41 @@ The GitHub token is already injected by the action, so `gh` is authenticated and
 | `display_report: true` | Undocumented for this use case, unreliable |
 | No `--allowedTools` in `claude_args` | Claude defaults to a restricted tool set that may not include `gh pr comment` |
 
+**Controlling cost and turns:**
+
+Too many permission denials drives up turn count and cost significantly. Each denial = Claude tries a tool, gets blocked, thinks about an alternative, retries — burning tokens.
+
+| Run | Turns | Cost | State |
+|-----|-------|------|-------|
+| Plugin (no comments) | 7 | $0.36 | Nothing posted |
+| Direct prompt, block only | 4 | $0.20 | ✅ Block comment |
+| + Inline tool, too few allowed tools | **36** | **$0.74** | ✅ Working but expensive |
+| + `--max-turns` + extra tools | ~10-15 | ~$0.25 | ✅ Working, cost controlled |
+
+Two fixes to keep cost down:
+
+**1. Cap turns** — prevents runaway sessions when Claude keeps hitting denials:
+```yaml
+claude_args: >-
+  --max-turns 15
+  --allowedTools "..."
+```
+
+**2. Add the tools Claude commonly tries** — stops denials before they happen. The most common ones missed are `ls`, `cat`, and `gh pr review`:
+```yaml
+--allowedTools "Read,Glob,Grep,
+  Bash(git diff:*),Bash(git log:*),Bash(git show:*),
+  Bash(ls:*),Bash(cat:*),
+  Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh api:*),
+  mcp__github_inline_comment__create_inline_comment"
+```
+
+> **Note:** `permission_denials_count` being non-zero is not always a failure — if the review output is correct, denials are just Claude trying extra things it worked around. Only investigate if the review output is missing or wrong.
+
 **Debugging tips:**
 
-- `permission_denials_count: 1` in action output → Claude tried to use a tool that wasn't allowed. Enable `show_full_output: true` temporarily to see which tool was denied.
+- `permission_denials_count > 0` + high turn count + high cost → add missing tools to `--allowedTools` and set `--max-turns`
+- `permission_denials_count: 1` + no output → Claude couldn't post at all. Enable `show_full_output: true` temporarily to see which tool was denied.
 - `"No buffered inline comments"` → Claude ran but couldn't post output. Check that `Bash(gh pr comment:*)` is in `--allowedTools`.
 - `Warning: Unexpected input(s) 'allowed_tools'` → You used the deprecated `allowed_tools:` input. Switch to `claude_args: --allowedTools "..."`.
 - Output is hidden by default. Add `show_full_output: true` to see full Claude execution log for debugging (remove after).
