@@ -1157,15 +1157,27 @@ Result: inline comments on specific lines + one summary comment for overall find
 | **Inline line comment** | Comment appears directly on the specific line in the diff, just like a human reviewer clicking "+" | `mcp__github_inline_comment__create_inline_comment` | Pinpointing exact lines — bugs, null checks, naming issues |
 | **Both (✅ what we use)** | Inline comments on specific lines + one summary comment with overall findings | Both tools | Best experience — mirrors how a human code reviewer works |
 
+**Why each setting in the workflow exists:**
+
+| Setting | Why it's there |
+|---------|---------------|
+| `prompt:` (direct) | Dropped the `code-review` plugin — it ran but had no mechanism to post output. Direct prompt gives full control. |
+| `Bash(gh pr comment:*)` in `--allowedTools` | The core output tool. Without it Claude finishes analysis silently — nowhere to send the result. |
+| `mcp__github_inline_comment__create_inline_comment` | Enables line-specific comments on the diff, like a human reviewer clicking "+". Not possible without explicitly listing it. |
+| `Bash(ls:*),Bash(cat:*),Bash(gh pr review:*)` | Tools Claude commonly tries during review that weren't listed — each denial wastes a full turn retrying and inflates cost. |
+| `--max-turns 15` | Without a cap, 10 permission denials caused Claude to loop 36 turns at $0.74. Hard stop at 15 keeps cost ~$0.25. |
+| `use_sticky_comment: "true"` | Without this, every new push to the PR adds a new duplicate review comment. With it, the same comment is updated in place. |
+
 **The correct working pattern — inline + summary (confirmed from official docs + real repo):**
 
 ```yaml
 - uses: anthropics/claude-code-action@v1
   with:
     anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    use_sticky_comment: "true"   # one summary comment per PR, updated each push
+    use_sticky_comment: "true"
     claude_args: >-
-      --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh api:*),mcp__github_inline_comment__create_inline_comment"
+      --max-turns 15
+      --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),Bash(cat:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh pr review:*),Bash(gh api:*),mcp__github_inline_comment__create_inline_comment"
     prompt: |
       REPO: ${{ github.repository }}
       PR NUMBER: ${{ github.event.pull_request.number }}
@@ -1221,11 +1233,54 @@ Too many permission denials drives up turn count and cost significantly. Each de
 
 Two fixes to keep cost down:
 
-**1. Cap turns** — prevents runaway sessions when Claude keeps hitting denials:
+**What is a "turn"?**
+
+A turn is one complete **think → act → observe** cycle inside Claude's agent loop:
+
+1. Claude **thinks** about what to do next
+2. Claude **calls a tool** (e.g. `gh pr diff 42`)
+3. Claude **reads the result** and decides the next step
+
+Each turn consumes tokens (Claude's thinking + the tool output it reads back). Permission denials are expensive — each denied tool costs a full turn just to recover:
+
+| Turn | Claude does |
+|------|-------------|
+| 1 | `gh pr diff 42` — reads the PR diff |
+| 2 | `gh pr view 42` — reads the description |
+| 3 | `Read` on a specific file |
+| 4 | Tries `Write` → **DENIED** (not in allowed list) |
+| 5 | Recovers, tries `gh pr review` → **DENIED** |
+| 6 | Recovers again, posts inline comment via MCP |
+| 7 | Posts summary via `gh pr comment` |
+
+With 10 denials over 36 turns, Claude spent ~15 extra turns just recovering from blocked attempts. `--max-turns 15` hard-stops the loop, and adding the missing tools eliminates the wasted recovery turns — bringing it from 36 turns to ~10-12.
+
+**1. Cap turns with `--max-turns`**
+
+`--max-turns` is the maximum number of think→act cycles Claude is allowed before it must stop, regardless of whether it's finished.
+
+Each turn = Claude thinks about what to do → calls one tool → reads the result → repeat.
+
+```
+Turn 1:  thinks "I need the PR diff"       → calls: gh pr diff 42          → reads: diff output
+Turn 2:  thinks "check this file"          → calls: Read EmployeesController.cs → reads: file
+Turn 3:  thinks "post inline comment"      → calls: mcp__github_inline_comment  → reads: success
+Turn 4:  thinks "post summary"             → calls: gh pr comment 42 --body "…" → reads: success
+Turn 5:  thinks "done"                     → stops
+```
+
+Without `--max-turns`: hitting 10 denials makes Claude keep looping and trying alternatives — 36+ turns, $0.74.
+With `--max-turns 15`: Claude is **forced to stop at turn 15** even mid-session. Worst case: partial review. Best case: finishes comfortably inside the limit.
+
+**Rule of thumb for sizing:**
+- Simple review (read diff + post comment): ~5–8 turns
+- With inline comments across multiple files: ~10–15 turns
+- `--max-turns 15` = comfortable ceiling for inline comments without runaway cost
+
 ```yaml
 claude_args: >-
-  --max-turns 15       # max agent loop iterations before Claude stops (default: unlimited)
-                       # each "turn" = one Claude think+act cycle; denials waste turns retrying
+  --max-turns 15       # hard stop at 15 think→act cycles (default: unlimited)
+                       # prevents runaway cost when Claude hits permission denials and retries
   --allowedTools "..."
 ```
 
