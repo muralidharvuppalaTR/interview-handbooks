@@ -32,6 +32,16 @@
   - [Playwright MCP (browser automation)](#practical-example-playwright-mcp)
   - [Managing MCP servers](#managing-mcp-servers)
 - [GitHub Integration](#github-integration)
+  - [Local PR workflows](#local-pr-workflows)
+  - [Claude Code GitHub App](#claude-code-github-app)
+    - [Installing the GitHub App](#installing-the-github-app)
+    - [What gets created](#what-gets-created)
+    - [Authentication](#authentication)
+    - [Org-level vs personal installation](#org-level-vs-personal-installation)
+    - [Self-hosted runner](#self-hosted-runner)
+    - [Customizing the workflows](#customizing-the-workflows)
+    - [Automated PR code review — making it post comments](#automated-pr-code-review--making-it-post-comments)
+    - [Common issues](#common-issues)
 - [Claude Code SDK](#claude-code-sdk)
 - [Tips & Tricks from Real Usage](#tips--tricks-from-real-usage)
 
@@ -1099,17 +1109,90 @@ steps:
       }
 ```
 
-**Tool permissions** — in GitHub Actions, all allowed tools must be listed explicitly. Unlike local development, there are no shortcut permissions. Each tool from each MCP server must be individually listed:
+**Tool permissions** — in GitHub Actions, all allowed tools must be listed explicitly. Use `claude_args: --allowedTools` (the `allowed_tools` input is **deprecated** since v1 and will be ignored with a warning):
 ```yaml
 - uses: anthropics/claude-code-action@v1
   with:
     anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    allowed_tools: |
-      Bash(npm run test)
-      Bash(npm run lint)
-      Read
-      mcp__github__create_issue
-      mcp__github__add_comment
+    claude_args: >-
+      --allowedTools "Read,Glob,Grep,Bash(npm run test:*),Bash(npm run lint:*)"
+```
+
+> ⚠️ Using `allowed_tools:` as a direct action input will produce `Warning: Unexpected input(s) 'allowed_tools'` and be silently ignored — Claude will run with default tools only.
+
+#### Automated PR code review — making it post comments
+
+Getting Claude to actually **post review comments** on PRs is non-obvious. Here's what we learned after debugging `permission_denials_count: 1` across multiple attempts.
+
+**Two comment styles — what's the difference:**
+
+| Style | How it looks | Tool used | Best for |
+|-------|-------------|-----------|----------|
+| **Block summary comment** | One comment at the top of the PR with all findings listed | `Bash(gh pr comment:*)` | Overview of all issues in one place |
+| **Inline line comment** | Comment appears directly on the specific line in the diff, just like a human reviewer clicking "+" | `mcp__github_inline_comment__create_inline_comment` | Pinpointing exact lines — bugs, null checks, naming issues |
+| **Both (✅ what we use)** | Inline comments on specific lines + one summary comment with overall findings | Both tools | Best experience — mirrors how a human code reviewer works |
+
+**The correct working pattern — inline + summary (confirmed from official docs + real repo):**
+
+```yaml
+- uses: anthropics/claude-code-action@v1
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    use_sticky_comment: "true"   # one summary comment per PR, updated each push
+    claude_args: >-
+      --allowedTools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*),Bash(gh api:*),mcp__github_inline_comment__create_inline_comment"
+    prompt: |
+      REPO: ${{ github.repository }}
+      PR NUMBER: ${{ github.event.pull_request.number }}
+
+      You are a senior code reviewer. Review this PR and post findings.
+
+      1. Run: gh pr diff ${{ github.event.pull_request.number }}
+      2. Review the changed files
+      3. For line-specific findings: use mcp__github_inline_comment__create_inline_comment
+         with confirmed: true — posts inline on that exact diff line
+      4. Post overall summary:
+         gh pr comment ${{ github.event.pull_request.number }} --body "## PR Review — <title>
+         ### Blockers / ### Suggestions / ### Nits"
+
+      Finding format: [blocker] / [suggestion] / [nit]
+      If no issues: post "Clean review — no issues found."
+```
+
+**Why `gh pr comment` instead of built-in action mechanisms?**
+
+`claude-code-action` does NOT automatically post Claude's response as a PR comment when triggered by `pull_request` events. That auto-posting only works for **interactive triggers** (`issue_comment`, `pull_request_review_comment`) — where Claude responds directly to a human mentioning `@claude`.
+
+For automated PR review (no human trigger), Claude runs as an **agent** and must **take an action** to post. The action gives Claude a set of tools — and if no posting tool is in the list, Claude finishes its analysis silently with nowhere to send it.
+
+`gh pr comment` (via Bash) is the simplest reliable tool for this. Claude calls it like any other Bash command:
+```bash
+gh pr comment 42 --body "## PR Review — ..."
+```
+
+The GitHub token is already injected by the action, so `gh` is authenticated and ready to use.
+
+**Key insight: Claude must be explicitly told to use `gh pr comment` AND given permission to do so via `--allowedTools`.** Without `Bash(gh pr comment:*)` in the tools list, Claude analyzes the PR but has no way to output the result.
+
+**What doesn't work and why:**
+
+| Approach | Problem |
+|----------|---------|
+| `plugins: 'code-review@claude-code-plugins'` with no tools | Plugin runs, but Claude has no tool to post output → `"No buffered inline comments"` |
+| `allowed_tools: 'mcp__github__*'` as action input | `allowed_tools` is a **deprecated input** — produces warning, silently ignored |
+| `display_report: true` | Undocumented for this use case, unreliable |
+| No `--allowedTools` in `claude_args` | Claude defaults to a restricted tool set that may not include `gh pr comment` |
+
+**Debugging tips:**
+
+- `permission_denials_count: 1` in action output → Claude tried to use a tool that wasn't allowed. Enable `show_full_output: true` temporarily to see which tool was denied.
+- `"No buffered inline comments"` → Claude ran but couldn't post output. Check that `Bash(gh pr comment:*)` is in `--allowedTools`.
+- `Warning: Unexpected input(s) 'allowed_tools'` → You used the deprecated `allowed_tools:` input. Switch to `claude_args: --allowedTools "..."`.
+- Output is hidden by default. Add `show_full_output: true` to see full Claude execution log for debugging (remove after).
+
+```yaml
+# Temporary debug flag — remove after diagnosing
+show_full_output: true
 ```
 
 #### Common issues
@@ -1130,6 +1213,9 @@ steps:
 | **Workflow skipped** | Comment didn't contain `@claude` | Normal — add `@claude` to the comment body |
 | **`@claude` shows org team suggestions** | GitHub autocomplete treating `@` as a mention — Claude GitHub App not installed on this repo | Press Escape to dismiss dropdown — plain text `@claude` is enough. App install shows `claude` in autocomplete |
 | **`base_url` input not working** | Not yet implemented in `claude-code-action` (issue #840) | Use LiteLLM env vars approach (Option 3) — set `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` via `env:` block |
+| **`permission_denials_count: 1` but no PR comment** | Claude tried to use a tool not in its allowed list — review ran but output was blocked | Add `show_full_output: true` to see which tool was denied, then add it to `--allowedTools` in `claude_args` |
+| **`"No buffered inline comments"`** | Claude ran but couldn't post output — missing `Bash(gh pr comment:*)` in allowed tools | Add `Bash(gh pr comment:*)` to `claude_args: --allowedTools` and include `gh pr comment` in the prompt instructions |
+| **`Warning: Unexpected input(s) 'allowed_tools'`** | `allowed_tools` is a deprecated action input in v1 — silently ignored | Replace with `claude_args: "--allowedTools Read,Bash(gh pr comment:*),..."` |
 
 #### Uninstalling
 
