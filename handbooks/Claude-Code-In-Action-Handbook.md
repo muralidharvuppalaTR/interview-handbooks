@@ -1054,6 +1054,64 @@ jobs:
 
 > **Note:** `workflow_dispatch` on `claude.yml` will show `Trigger result: false` — this is normal. That workflow is designed for `@claude` comment triggers, not manual runs. Use it only to test runner compatibility, not actual Claude responses.
 
+#### Customizing the workflows
+
+After merging, you can enhance the workflows to fit your project:
+
+**Environment preparation** — add steps before Claude runs:
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - name: Setup Node.js          # example: install deps before Claude reviews
+    uses: actions/setup-node@v4
+    with:
+      node-version: '20'
+  - run: npm ci
+  - uses: anthropics/claude-code-action@v1
+    with:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+**Custom instructions** — give Claude context about your project:
+```yaml
+- uses: anthropics/claude-code-action@v1
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    prompt: |
+      You are reviewing a .NET 9 API. Follow our CLAUDE.md guidelines.
+      Focus on security, performance, and test coverage.
+```
+
+**MCP server configuration** — give Claude additional capabilities:
+```yaml
+- uses: anthropics/claude-code-action@v1
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    mcp_config: |
+      {
+        "mcpServers": {
+          "github": {
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-github"],
+            "env": { "GITHUB_TOKEN": "${{ secrets.GITHUB_TOKEN }}" }
+          }
+        }
+      }
+```
+
+**Tool permissions** — in GitHub Actions, all allowed tools must be listed explicitly. Unlike local development, there are no shortcut permissions. Each tool from each MCP server must be individually listed:
+```yaml
+- uses: anthropics/claude-code-action@v1
+  with:
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+    allowed_tools: |
+      Bash(npm run test)
+      Bash(npm run lint)
+      Read
+      mcp__github__create_issue
+      mcp__github__add_comment
+```
+
 #### Common issues
 
 | Issue | Cause | Fix |
