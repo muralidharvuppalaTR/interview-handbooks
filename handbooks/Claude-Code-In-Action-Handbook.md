@@ -902,22 +902,22 @@ The workflow needs a secret to authenticate with Claude. There are four options:
 |--------|---------------|-------------|
 | **1. OAuth token (default)** | `CLAUDE_CODE_OAUTH_TOKEN` | Auto-created by `/install-github-app` — uses your Claude subscription |
 | **2. API Key only** | `ANTHROPIC_API_KEY` | Direct Anthropic API key (not LiteLLM) |
-| **3. API Key + `anthropic_base_url`** | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Does NOT work — `anthropic_base_url` is not a valid action input, causes warning |
-| **4. API Key + `base_url` (recommended for LiteLLM)** | `ANTHROPIC_API_KEY` + `ANTHROPIC_BASE_URL` | Native action input — routes requests through LiteLLM proxy |
+| **3. LiteLLM via env vars (✅ confirmed working)** | `ANTHROPIC_API_KEY` (LiteLLM key) | Pass `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` via `env:` — Claude Code CLI picks them up internally |
 
 **OAuth token:** `CLAUDE_CODE_OAUTH_TOKEN` is created when you sign in via `claude login`. The `/install-github-app` command saves it as a GitHub secret automatically.
 
-**LiteLLM enterprise setup:** A LiteLLM key (e.g., `sk-gMuyCJ...`) only works when requests are routed through the proxy. Without `base_url`, the action sends requests directly to Anthropic → "Invalid API key" error.
+**LiteLLM via env vars (confirmed working):** The action has two layers — the action wrapper (uses `anthropic_api_key` input) and the Claude Code CLI running inside it (reads `ANTHROPIC_AUTH_TOKEN` env var). Both need the key independently. The URL is not sensitive and can be hardcoded.
 
-Example workflow for LiteLLM:
 ```yaml
 - uses: anthropics/claude-code-action@v1
   with:
-    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-    base_url: ${{ secrets.ANTHROPIC_BASE_URL }}
+    anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}  # action wrapper uses this
+  env:
+    ANTHROPIC_BASE_URL: https://litellm.int.thomsonreuters.com  # hardcoded — not sensitive
+    ANTHROPIC_AUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}      # Claude Code CLI uses this
 ```
 
-Add these secrets at: `Settings > Secrets > Actions > New repository secret`
+Only one secret needed: `ANTHROPIC_API_KEY` (your LiteLLM key). Add it at: `Settings > Secrets > Actions > New repository secret`
 
 **Note:** If your org (e.g., `tr`) has `ANTHROPIC_API_KEY` set at org level as a direct Anthropic key, you only need `anthropic_api_key` — no `base_url` required. That's why some org repos work without it.
 
@@ -931,14 +931,110 @@ If your org already installed the Claude app:
 | Repo is under your **personal account** | Install the app separately from [github.com/apps/claude](https://github.com/apps/claude) |
 | You see "insufficient access" when configuring | The app was installed by org admin — only they can modify it |
 
+#### Self-hosted runner
+
+By default workflows run on `ubuntu-latest` (GitHub-hosted). But in enterprise setups you may need a **self-hosted runner** — a machine you control that runs the workflow jobs.
+
+**Why you might need it:**
+
+| Scenario | Problem | Solution |
+|----------|---------|----------|
+| OAuth token + `ubuntu-latest` | `403 IP address not in allowed range` — enterprise subscriptions restrict which IPs can call Claude's API. GitHub-hosted runner IPs are not on the allowlist. | Self-hosted runner on your machine (same network) |
+| Org-level `ANTHROPIC_API_KEY` not scoped to your repo | Secret isn't available in the workflow | Add `CLAUDE_CODE_OAUTH_TOKEN` as a repo-level secret and use self-hosted runner |
+
+**Windows self-hosted runner — does NOT work:**
+
+`claude-code-action` is built for Linux. On Windows, two layers break:
+
+1. **Bash path issue** — the action uses bash scripts internally. Windows resolves `bash` to WSL bash (`C:\Windows\System32\bash.EXE`) which can't handle Windows-style `GITHUB_ACTION_PATH` values. Git bash (`C:\Program Files\Git\usr\bin\bash.exe`) is the correct one but appears later in system PATH.
+2. **Bun file handle error** — after fixing bash, bun (the JS runtime the action uses) hits a Windows-specific file descriptor bug: `directory mismatch... fd [handle]`. This is a known bun bug on Windows with no easy workaround.
+
+**WSL2 Linux self-hosted runner — the fix:**
+
+Register a Linux runner inside WSL2 on your Windows machine. Same machine = same network (no IP restriction). Linux = no bash/bun issues.
+
+```bash
+# Inside WSL terminal
+mkdir ~/actions-runner && cd ~/actions-runner
+curl -o actions-runner-linux-x64-2.333.1.tar.gz -L \
+  https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz
+tar xzf ./actions-runner-linux-x64-2.333.1.tar.gz
+./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO --token YOUR_TOKEN
+./run.sh
+```
+
+Go to **GitHub repo → Settings → Actions → Runners → New self-hosted runner**, select **Linux**, and copy the token shown. When asked for a runner name, give it a distinct name (e.g., `TR-1L0XML3-Linux`) so it coexists with any existing Windows runner.
+
+Then update your workflow:
+```yaml
+runs-on: [self-hosted, Linux]   # WSL2 — same machine IP, works with claude-code-action
+```
+
+**Pre-requisites on the WSL runner (one-time install):**
+
+`claude-code-action` needs `unzip` to extract the Claude Code binary. Fresh WSL environments don't have it:
+
+```bash
+sudo apt-get install -y unzip
+```
+
+Do this once on the WSL machine — it stays permanently and all future workflow runs will have it.
+
+**WSL proxy / IP restriction — use LiteLLM env vars instead:**
+
+If you have a LiteLLM proxy (common in enterprise), skip the proxy setup entirely and use the LiteLLM env vars approach (Option 5 above) — it's simpler and confirmed working. The `ANTHROPIC_BASE_URL` routes all requests through LiteLLM, bypassing the IP restriction entirely.
+
+If you don't have LiteLLM, you can try setting the corporate proxy in WSL:
+
+```bash
+# Step 1 — find the Windows proxy address
+reg.exe query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer
+
+# Step 2 — set it in WSL permanently
+echo 'export https_proxy=http://<proxy>:<port>' >> ~/.bashrc
+echo 'export http_proxy=http://<proxy>:<port>' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Then restart the runner.
+
+**Runner management:**
+
+```bash
+# Start the runner
+cd /opt/actions-runner && ./run.sh
+
+# Clear stale action cache (if you get "directory mismatch" errors)
+sudo rm -rf /opt/actions-runner/_work/_actions/anthropics
+
+# OAuth token location (in WSL)
+cat ~/.claude/credentials.json   # claudeAiOauth.accessToken is the value for CLAUDE_CODE_OAUTH_TOKEN secret
+```
+
+> **Note:** The OAuth token auto-rotates when you use Claude Code locally. If the runner starts failing auth errors after working previously, re-copy the `accessToken` from `credentials.json` into the GitHub secret.
+
+**Runner setup summary:**
+
+| Runner | Works? | Why |
+|--------|--------|-----|
+| `ubuntu-latest` | ❌ | IP restriction with enterprise OAuth token |
+| `[self-hosted, Windows]` | ❌ | bun Windows file handle bug |
+| `[self-hosted, Linux]` (WSL2) | ✅ | Linux + same machine network |
+
 #### Common issues
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | **"Commits must have verified signatures"** (HTTP 409) | Org requires signed commits — `/install-github-app` can't satisfy this | Create workflow files **manually** and push them yourself |
-| **"IP address not in allowed range"** | Org restricts pushes to approved IPs | Connect to corporate VPN or push from office network |
-| **`ANTHROPIC_API_KEY` is empty** in workflow logs | Secret not set in repo | Add it at `Settings > Secrets > Actions > New repository secret` |
-| **Workflow skipped** | Event didn't match trigger condition (e.g., comment without `@claude`) | Normal — not an error |
+| **"IP address not in allowed range"** | Enterprise OAuth token enforces IP allowlist. GitHub-hosted runner IPs are blocked. | Use LiteLLM env vars approach (Option 5) on WSL2 self-hosted runner — bypasses IP restriction entirely |
+| **`Unable to locate executable file: unzip`** | WSL runner missing `unzip` — needed to extract Claude Code binary | Run `sudo apt-get install -y unzip` once on the WSL machine |
+| **"Workflow validation failed. Workflow file must match default branch"** | First PR that adds the review workflow — workflow on PR branch doesn't match main yet | Expected and safe to ignore — resolves automatically once the PR is merged to main |
+| **`ANTHROPIC_API_KEY` is empty** in workflow logs | Secret not set in repo, or org-level secret not scoped to this repo | Add `CLAUDE_CODE_OAUTH_TOKEN` as repo-level secret instead |
+| **`/bin/bash: C:actions-runner_work_temp...sh: No such file or directory`** | Windows runner using WSL bash instead of Git bash | Switch to `[self-hosted, Linux]` (WSL2) — Windows runner not supported |
+| **`directory mismatch... fd [handle]`** | Bun file handle bug on Windows | Switch to `[self-hosted, Linux]` (WSL2) — not fixable on Windows |
+| **Workflow skipped** | Comment didn't contain `@claude` | Normal — add `@claude` to the comment body |
+| **`@claude` shows org team suggestions** | GitHub autocomplete treating `@` as a mention | Press Escape to dismiss dropdown — plain text `@claude` is enough |
+| **`base_url` input not working** | Not yet implemented in `claude-code-action` (issue #840) | Use LiteLLM env vars approach (Option 5) — set `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` via `env:` block |
 
 #### Uninstalling
 
