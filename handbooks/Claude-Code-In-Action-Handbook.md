@@ -1122,7 +1122,32 @@ steps:
 
 #### Automated PR code review — making it post comments
 
-Getting Claude to actually **post review comments** on PRs is non-obvious. Here's what we learned after debugging `permission_denials_count: 1` across multiple attempts.
+Getting Claude to actually **post review comments** on PRs is non-obvious. Here's the full journey — three stages to get from nothing to inline comments.
+
+**Stage 1 — Plugin approach: no comments at all**
+
+The default setup uses `plugins: 'code-review@claude-code-plugins'`. Claude ran, analyzed the PR, spent ~$0.36 — but nothing appeared on the PR.
+
+- `permission_denials_count: 1` in the action output → Claude tried to call a tool that wasn't permitted
+- Tried `allowed_tools: 'mcp__github__*'` → not a valid action input in v1, silently ignored with a warning
+- Tried `display_report: true` → undocumented for this use case, did nothing
+- **Root cause:** The plugin generates a review internally but has no mechanism to post it when running as an automated agent. `pull_request` events have no human `@claude` trigger — so Claude finishes its analysis with nowhere to send it.
+
+**Stage 2 — Direct prompt + `gh pr comment`: block summary ✅**
+
+Dropped the plugin. Used a direct `prompt` telling Claude to fetch the diff and post via `gh pr comment`. Added `Bash(gh pr comment:*)` to `claude_args: --allowedTools`.
+
+Why this works: for `pull_request` events, Claude runs as an **agent** — it does NOT auto-post responses like it does when replying to `@claude` mentions. It must explicitly call a tool to output anything. `gh pr comment` is that tool. The GitHub token is already injected by the action so `gh` is authenticated and ready.
+
+Result: one block comment with all findings (blockers, suggestions, nits) listed together.
+
+**Stage 3 — Add inline comment tool: line-specific comments ✅**
+
+Added `mcp__github_inline_comment__create_inline_comment` to `--allowedTools` and updated the prompt to say: *"for line-specific findings, use this tool with `confirmed: true`"*.
+
+Why inline wasn't coming before: the tool simply wasn't in the allowed list — Claude had no permission to call it. Once added and the prompt explicitly instructs Claude to use it, findings appear directly on the diff lines exactly like a human reviewer.
+
+Result: inline comments on specific lines + one summary comment for overall findings.
 
 **Two comment styles — what's the difference:**
 
