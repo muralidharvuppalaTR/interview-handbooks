@@ -24,9 +24,20 @@
 - [Planning and Thinking Modes](#planning-and-thinking-modes)
 - [Building Custom Slash Commands (Commands & Skills)](#building-custom-slash-commands-commands--skills)
 - [Claude Code Hooks](#claude-code-hooks)
+  - [What is a tool call?](#what-is-a-tool-call)
+  - [How Claude Code knows which hooks are configured](#how-claude-code-knows-which-hooks-are-configured)
+  - [How hooks fit into the flow](#how-hooks-fit-into-the-flow)
+  - [Hook types](#hook-types)
   - [Defining and Configuring Hooks](#defining-and-configuring-hooks)
+  - [PreToolUse hooks](#pretooluse-hooks)
+  - [PostToolUse hooks](#posttooluse-hooks)
+  - [Building a Hook — 4 Steps](#building-a-hook--4-steps)
+  - [Hook stdin Structure](#hook-stdin-structure--what-your-script-receives)
+  - [Hook Command Types](#hook-command-types)
+  - [Where Hook Output Goes](#where-hook-output-goes)
   - [Security Hook Example](#security-hook-example)
   - [Useful Hook Patterns](#useful-hook-patterns)
+  - [Real-World Hook Examples](#real-world-hook-examples)
 - [Extending Claude Code with MCP Servers](#extending-claude-code-with-mcp-servers)
   - [Adding MCP servers](#adding-mcp-servers)
   - [Playwright MCP (browser automation)](#practical-example-playwright-mcp)
@@ -606,39 +617,469 @@ Another example: `/updateclaudemd CI/CD only` → `"CI/CD only"` is the argument
 
 ## Claude Code Hooks
 
-Hooks are **shell commands that execute automatically** in response to Claude Code events — like pre-commit hooks in git, but for Claude Code actions.
+Hooks are **shell commands that execute automatically** in response to Claude Code events. They insert themselves into the normal tool execution flow, letting you run your own code just before or just after Claude uses a tool.
+
+### What is a tool call?
+
+A **tool call** is when Claude decides it needs to use one of its built-in tools to take an action, rather than just replying with text.
+
+When you ask Claude something, it can either:
+- **Answer directly** in text → not a tool call
+- **Use a tool** to do something → that's a tool call
+
+Every time Claude uses `Read`, `Write`, `Bash`, `Grep`, `Edit` etc., that's one tool call.
+
+| What Claude does | Tool call |
+|-----------------|-----------|
+| Reads a file | `Read` |
+| Runs `dotnet build` | `Bash` |
+| Searches for a pattern | `Grep` |
+| Creates/overwrites a file | `Write` |
+| Edits part of a file | `Edit` |
+
+Each tool call produces a JSON payload describing what Claude wants to do — this is what hooks intercept.
+
+### How Claude Code knows which hooks are configured
+
+Claude Code reads the **settings files at startup** — hooks are stored there, so Claude Code knows before any tool call whether hooks exist.
+
+There are three levels — Claude Code checks all of them and merges the hooks:
+
+| Level | File location | Applies to |
+|-------|-------------|------------|
+| **User (global)** | `~/.claude/settings.json` | All projects on your machine |
+| **Project** | `.claude/settings.json` | This project only (can commit to repo) |
+| **Local** | `.claude/settings.local.json` | This project, your machine only (git-ignored) |
+
+At startup Claude Code:
+1. Loads all three settings files
+2. Merges hooks from all levels
+3. Builds an internal registry in memory: *"for PreToolUse on Bash — run this command"*
+
+Then at runtime, every tool call is checked against that in-memory registry — no file reading happens during the session:
+
+```
+Startup:   read settings → build hook registry in memory
+           registry = { "PreToolUse:Bash": [...], "PostToolUse:Write": [...] }
+
+Runtime:   Claude wants to use Read
+           → check registry for "PreToolUse:Read" → not found → execute directly
+
+           Claude wants to use Bash
+           → check registry for "PreToolUse:Bash" → found → generate JSON → run hook
+```
+
+**Why the JSON is only generated when a hook is registered:**
+
+Claude Code does NOT generate the tool call JSON unless a matching hook exists. There is no reason to create it if nothing is listening. Think of it like logging:
+
+```
+No hooks registered  = logging disabled → no JSON created at all
+Hook registered      = logging enabled  → JSON created and sent to your hook via stdin
+```
+
+### How hooks fit into the flow
+
+When you ask Claude something, the normal flow is:
+
+```
+Your query → Claude model → decides to use a tool → Claude Code executes tool → result returned to Claude
+```
+
+**If no hooks are configured** — Claude Code skips the hook step entirely. The JSON is never generated or sent anywhere. The tool executes directly with zero overhead:
+
+```
+No hooks:   Claude wants Read .env → executes immediately → result back
+```
+
+**If a hook is configured** — Claude Code checks the matcher. If it matches, the JSON is generated and passed to your hook command via stdin. If the matcher doesn't match, the tool executes directly (same as no hooks):
+
+```
+Hook configured, matcher matches:    Claude wants Read .env
+                                             ↓
+                                     JSON generated → sent to hook via stdin
+                                             ↓
+                                     hook exits 0 (allow) or 2 (block)
+
+Hook configured, matcher no match:   Claude wants Read file.cs  (matcher = "Bash")
+                                             ↓
+                                     matcher skipped → executes directly
+```
+
+Hooks insert at two points in the matched flow:
+
+```
+Your query → Claude model → decides to use a tool
+                                    ↓
+                            [PreToolUse hook runs]  ← can allow or block
+                                    ↓
+                         Claude Code executes tool
+                                    ↓
+                            [PostToolUse hook runs] ← can run follow-up actions
+                                    ↓
+                            result returned to Claude
+```
+
+### Hook types
+
+| Hook event | When it fires | Can block? |
+|-----------|--------------|-----------|
+| **PreToolUse** | Before Claude runs a tool (Read, Write, Bash, etc.) | ✅ Yes — `exit 2` blocks the tool call |
+| **PostToolUse** | After a tool completes | ❌ No — tool already ran; use for follow-up actions |
+| **Notification** | When Claude needs tool permission OR has been idle 60s | — |
+| **Stop** | When Claude finishes responding | — |
+| **SubagentStop** | When a subagent (shown as "Task" in UI) finishes | — |
+| **PreCompact** | Before a context compaction (manual or automatic) | — |
+| **UserPromptSubmit** | When user submits a prompt, before Claude processes it | ✅ Yes |
+| **SessionStart** | When a session starts or resumes | — |
+| **SessionEnd** | When a session ends | — |
 
 ### Defining and Configuring Hooks
 
-Hooks are configured in your settings file. Use `/hooks` or configure in `settings.json`:
-
-| Hook event | When it fires |
-|-----------|--------------|
-| **PreToolUse** | Before Claude runs a tool (Read, Write, Bash, etc.) |
-| **PostToolUse** | After a tool completes |
-| **Notification** | When Claude sends a notification |
-| **Stop** | When Claude finishes a response |
-
-### Hook configuration example
+Hooks are configured in `settings.json`. Use `/hooks` in Claude Code or edit directly:
 
 ```json
 {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
-        "command": "echo 'About to run a bash command'"
+        "matcher": "Read",         // which tool to target (supports | for multiple: "Write|Edit|MultiEdit")
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/hooks/read_hook.ts"
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Write",
-        "command": "echo 'File was written'"
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /home/hooks/edit_hook.ts"
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+### PreToolUse hooks
+
+Run **before** a tool is executed. Claude is about to do something — your hook runs first and can stop it.
+
+**"Can block"** means your hook has the power to cancel the tool before it runs:
+
+```
+Claude: "I'm going to read .env file"
+        ↓
+PreToolUse hook runs → exit 2 → BLOCKED
+Claude never reads the file ✅
+```
+
+Think of it like a **security guard at the entrance** — stops you before you go in.
+
+Your hook can:
+- **Allow** — `exit 0` → tool proceeds normally
+- **Block** — `exit 2` → tool is cancelled, your `stderr` message is sent back to Claude as the reason
+
+```json
+"PreToolUse": [
+  {
+    "matcher": "Bash(git add:*)",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '.env'; then echo 'BLOCKED: Cannot add .env files' >&2; exit 2; fi"
+      }
+    ]
+  }
+]
+```
+
+### PostToolUse hooks
+
+Run **after** a tool has completed. The tool has already executed — the file is already written, the command already ran.
+
+**"Cannot block"** means there is nothing left to cancel — the action is already done:
+
+```
+Claude: "I'm going to write file.cs"
+        ↓
+File is written ← already happened
+        ↓
+PostToolUse hook runs → exit 2 here does nothing — file is already written
+```
+
+Think of it like a **security guard at the exit** — you've already been inside, too late to stop you.
+
+Your hook can:
+- Run follow-up operations (e.g. format a file Claude just edited)
+- Provide additional feedback to Claude about what happened
+- Log or audit what Claude changed
+
+```json
+"PostToolUse": [
+  {
+    "matcher": "Write|Edit|MultiEdit",
+    "hooks": [
+      {
+        "type": "command",
+        "command": "dotnet format $CLAUDE_TOOL_OUTPUT_FILE"
+      }
+    ]
+  }
+]
+```
+
+**Side by side:**
+
+| | PreToolUse | PostToolUse |
+|--|-----------|------------|
+| Runs | Before tool executes | After tool executes |
+| Can block? | ✅ Yes — `exit 2` cancels the tool | ❌ No — too late, already done |
+| Analogy | Security guard at entrance | Security guard at exit |
+| Use for | Access control, validation, blocking | Formatting, testing, logging |
+
+### Building a Hook — 4 Steps
+
+Creating a hook involves four steps:
+
+**Step 1 — Decide: PreToolUse or PostToolUse?**
+
+| Choice | When to use |
+|--------|------------|
+| `PreToolUse` | You want to **allow or block** the tool before it runs |
+| `PostToolUse` | You want to **react** after the tool already ran (format, test, log) |
+
+**Step 2 — Determine which tool to watch**
+
+Set the `matcher` to the tool name. Supports `|` for multiple tools:
+
+```json
+"matcher": "Bash"                    // only Bash calls
+"matcher": "Write|Edit|MultiEdit"    // any file write/edit
+"matcher": "Bash(git add:*)"         // only 'git add ...' commands
+"matcher": "Read"                    // only file reads
+```
+
+**Step 3 — Write a command that receives the tool call as JSON**
+
+When Claude is about to use a tool, Claude Code passes the full details of that tool call to your hook as **JSON via stdin**. The JSON structure is:
+
+```json
+{
+  "session_id": "2d6a1e4d-6...",         // current Claude session ID
+  "transcript_path": "/Users/sg/...",    // path to full conversation transcript
+  "hook_event_name": "PreToolUse",       // which hook type fired
+  "tool_name": "Read",                   // the tool Claude wants to use
+  "tool_input": {                        // the arguments Claude passed to the tool
+    "file_path": "/code/queries/.env"
+  }
+}
+```
+
+Your script reads this from stdin, parses it, and decides what to do:
+
+```bash
+#!/bin/bash
+input=$(cat)                                              # read JSON from stdin
+file=$(echo "$input" | jq -r '.tool_input.file_path')    # parse tool_input field
+
+if echo "$file" | grep -q ".env"; then
+  echo "BLOCKED: cannot read .env files" >&2
+  exit 2   # block it and tell Claude why
+fi
+# exit 0 (implicit) — allow it
+```
+
+> **Note:** Since both `Read` and `Grep` can access file contents, use `"matcher": "Read|Grep"` to block sensitive file access from both tools.
+
+**Step 4 — Use exit code to give feedback to Claude**
+
+Your script's exit code is the signal back to Claude:
+
+| Exit code | Meaning | What happens |
+|-----------|---------|-------------|
+| `exit 0` | ✅ Allow | Tool runs normally |
+| `exit 1` | ⚠️ Error (logged) | Tool **still runs** — `exit 1` signals your script crashed, not an intentional block. A common gotcha. |
+| `exit 2` | ❌ Block + tell Claude | Tool cancelled. Whatever you wrote to `stderr` is sent to Claude as the reason — Claude reads it and adjusts |
+
+> **Common gotcha:** `exit 1` does NOT block the tool. In most Unix conventions `exit 1` means failure, so it feels like it should block — but in Claude Code's hook protocol, `exit 2` is the specific contract for "block this tool call." `exit 1` is interpreted as "hook script itself crashed" and Claude proceeds anyway.
+
+Full flow example:
+```
+Claude wants to read: /code/queries/.env
+        ↓
+Hook runs → reads JSON → checks tool_input.file_path → finds ".env" → exit 2
+        ↓
+Claude Code cancels the Read
+        ↓
+Claude sees: "BLOCKED: cannot read .env files" → tries a different approach
+```
+
+### Hook stdin Structure — What Your Script Receives
+
+The JSON passed to your hook via stdin **changes depending on the hook type and the tool matched**. This is a common source of confusion when writing hooks.
+
+**PreToolUse / PostToolUse** — includes `tool_name` and `tool_input` (structure of `tool_input` varies per tool):
+
+```json
+// PostToolUse — TodoWrite tool
+{
+  "session_id": "9ecf22fa-edf8-4332-ae85-b6d5456eda64",
+  "transcript_path": "/path/to/transcript.jsonl",
+  "hook_event_name": "PostToolUse",
+  "tool_name": "TodoWrite",
+  "tool_input": {
+    "todos": [{ "content": "write a readme", "status": "pending", "priority": "medium", "id": "1" }]
+  },
+  "tool_response": {
+    "oldTodos": [],
+    "newTodos": [{ "content": "write a readme", "status": "pending", "priority": "medium", "id": "1" }]
+  }
+}
+```
+
+**Stop hook** — no `tool_name` or `tool_input`, just session info:
+
+```json
+{
+  "session_id": "af9f50b6-f042-4773-b3e2-c3a4814765ce",
+  "transcript_path": "/path/to/transcript.jsonl",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false
+}
+```
+
+**Key takeaway:** Every hook type has a different stdin shape. You can't assume `tool_input.file_path` exists — it only exists for tools like `Read`, `Write`, `Edit`. For `Bash` it's `tool_input.command`. For `TodoWrite` it's `tool_input.todos`.
+
+**How to discover the exact structure — the helper hook pattern:**
+
+Before writing real hook logic, add a temporary logging hook with `jq` to dump the exact stdin to a file:
+
+```json
+{
+  "PostToolUse": [
+    {
+      "matcher": "*",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "jq . > C:/myrepo/.claude/hooks/post-log.json"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Run a few Claude commands, then open `post-log.json` to see exactly what your hook receives for each tool. This tells you the precise field names to use in your hook script before you write any logic.
+
+> On Windows without `jq`, use Python instead: `"command": "python -c \"import json,sys; open('hook.log','a').write(json.dumps(json.load(sys.stdin),indent=2)+'\\n')\""` — or better, use the `inspect_hook.py` log file approach from the previous section.
+
+### Hook Command Types
+
+The `command` field can be **any shell command** the OS can execute — not just bash. Claude Code passes the tool call JSON via **stdin** to whatever command you specify.
+
+| Type | Example command | When to use |
+|------|----------------|-------------|
+| Inline shell | `"echo 'blocked' >&2 && exit 2"` | Simple one-liners, quick checks |
+| Bash script | `"bash /path/to/hook.sh"` | Multi-step logic, reusable across hooks |
+| Python | `"python /path/to/hook.py"` | JSON parsing, complex logic, most practical |
+| Node.js | `"node /path/to/hook.js"` | If your team is JS-heavy |
+| PowerShell | `"powershell -File hook.ps1"` | Windows environments |
+
+**Windows gotchas:**
+
+| Issue | Problem | Fix |
+|-------|---------|-----|
+| `python3` not found | Windows uses `python`, not `python3` | Use `"python hook.py"` instead of `"python3 hook.py"` |
+| Inline command fails | JSON string contains `"` — inner quotes break the JSON | Use a script file instead of inline |
+| Path backslashes | `C:\path\to\hook.py` breaks shell parsing | Use forward slashes: `C:/path/to/hook.py` |
+
+```json
+// ✅ Windows-correct command field
+"command": "python C:/GIT/myrepo/.claude/hooks/inspect_hook.py"
+
+// ❌ Will fail on Windows
+"command": "python3 C:\\GIT\\myrepo\\.claude\\hooks\\inspect_hook.py"
+```
+
+**Reading the JSON in each language:**
+
+```bash
+# hook.sh — Bash
+input=$(cat)                                              # read JSON from stdin
+file=$(echo "$input" | jq -r '.tool_input.file_path')    # parse with jq
+if echo "$file" | grep -q ".env"; then
+  echo "BLOCKED: cannot read .env files" >&2
+  exit 2
+fi
+```
+
+```python
+# hook.py — Python (most practical for JSON parsing)
+import json, sys
+
+data = json.load(sys.stdin)          # parse JSON from stdin
+tool = data["tool_name"]
+file_path = data.get("tool_input", {}).get("file_path", "")
+
+if ".env" in file_path:
+    print("BLOCKED: cannot read .env files", file=sys.stderr)
+    sys.exit(2)
+
+sys.exit(0)
+```
+
+```javascript
+// hook.js — Node.js
+const chunks = [];
+process.stdin.on("data", d => chunks.push(d));
+process.stdin.on("end", () => {
+  const data = JSON.parse(Buffer.concat(chunks).toString());
+  const filePath = data?.tool_input?.file_path ?? "";
+  if (filePath.includes(".env")) {
+    process.stderr.write("BLOCKED: cannot read .env files\n");
+    process.exit(2);
+  }
+  process.exit(0);
+});
+```
+
+> **Tip:** Python is the most practical choice for hooks because JSON parsing is built-in, no extra tools like `jq` needed, and logic can grow complex without becoming unreadable.
+
+### Where Hook Output Goes
+
+A common source of confusion — `echo`, `print`, `stdout` don't show up where you expect:
+
+| Output type | exit 0 | exit 2 |
+|-------------|--------|--------|
+| `stdout` | Passed to Claude as context (not shown in UI) | Ignored |
+| `stderr` | Swallowed — not shown anywhere | Sent to Claude as the block reason — Claude reads it, not the user |
+| Log file | ✅ Visible to user (open in editor) | ✅ Visible to user |
+
+**Key insight:** There is no way to print hook output directly into the Claude Code chat UI. To inspect what your hook receives, write to a log file:
+
+```python
+import json, sys
+
+data = json.load(sys.stdin)
+
+# Write payload to a log file — open it in VS Code to inspect
+with open("C:/myrepo/.claude/hooks/hook.log", "a") as f:
+    f.write("=== HOOK PAYLOAD ===\n")
+    f.write(json.dumps(data, indent=2))
+    f.write("\n====================\n")
+
+sys.exit(0)  # allow the tool to proceed
+```
+
+This is the standard debugging pattern — run a few Claude commands, then open `hook.log` to see every tool call payload. Useful for understanding what `tool_input` looks like for different tools before writing real hook logic.
 
 ### Security Hook Example
 
@@ -650,7 +1091,12 @@ Prevent Claude from accidentally committing `.env` files:
     "PreToolUse": [
       {
         "matcher": "Bash(git add:*)",
-        "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '.env'; then echo 'BLOCKED: Cannot add .env files to git' >&2; exit 1; fi"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q '.env'; then echo 'BLOCKED: Cannot add .env files to git' >&2; exit 2; fi"
+          }
+        ]
       }
     ]
   }
@@ -659,13 +1105,134 @@ Prevent Claude from accidentally committing `.env` files:
 
 ### Useful Hook Patterns
 
-| Pattern | What it does |
-|---------|-------------|
-| **Auto-lint after edit** | Run linter after Claude edits a file |
-| **Block dangerous commands** | Prevent `rm -rf`, `git push --force` |
-| **Auto-test after changes** | Run tests after Claude modifies code |
-| **Notify on completion** | Send a notification when Claude finishes a long task |
-| **Log all actions** | Write Claude's actions to a log file for audit |
+| Pattern | Hook type | What it does |
+|---------|-----------|-------------|
+| **Auto-format after edit** | PostToolUse | Run formatter after Claude edits a file |
+| **Block dangerous commands** | PreToolUse | Prevent `rm -rf`, `git push --force`, `.env` commits |
+| **Auto-test after changes** | PostToolUse | Run tests after Claude modifies code |
+| **Access control** | PreToolUse | Block Claude from reading or editing specific files |
+| **Code quality** | PostToolUse | Run linters/type checkers and feed results back to Claude |
+| **Notify on completion** | Stop | Send a notification when Claude finishes a long task |
+| **Log all actions** | PreToolUse + PostToolUse | Audit trail of every file Claude accesses or modifies |
+| **Validate conventions** | PostToolUse | Check naming conventions or coding standards after edits |
+
+### Real-World Hook Examples
+
+#### TypeScript Type-Checking Hook
+
+**Problem:** When Claude modifies a function signature (e.g. adds a `verbose` parameter to a function in `schema.ts`), it often updates the definition but misses all the call sites in other files. The type errors exist but Claude doesn't catch them immediately.
+
+**Solution:** A PostToolUse hook that runs `tsc --noEmit` after every file edit, captures the errors, and feeds them back to Claude so it fixes them in the same session.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/myrepo/.claude/hooks/typecheck_hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```python
+# typecheck_hook.py
+import subprocess, sys, json
+
+# Run TypeScript compiler in check-only mode
+result = subprocess.run(
+    ["tsc", "--noEmit"],
+    capture_output=True, text=True
+)
+
+if result.returncode != 0:
+    # Send errors to stderr — Claude reads this and fixes the issues
+    print("TypeScript errors found:", file=sys.stderr)
+    print(result.stdout, file=sys.stderr)
+    sys.exit(2)  # signal Claude to fix before continuing
+
+sys.exit(0)
+```
+
+**How it works:**
+1. Claude edits a file → PostToolUse hook fires
+2. `tsc --noEmit` runs → finds type errors in other files
+3. Errors sent back to Claude via `stderr`
+4. Claude fixes the broken call sites automatically
+
+> Works for any typed language — swap `tsc --noEmit` for your language's type checker or test runner.
+
+---
+
+#### Query Duplication Prevention Hook
+
+**Problem:** On larger projects with many database query files, when Claude is given a complex multi-step task (e.g. "build a Slack integration that alerts about orders pending 3+ days"), it sometimes writes a *new* query instead of reusing the existing `getPendingOrders()` function. Duplication creeps in silently.
+
+**Solution:** A PostToolUse hook that watches the `./queries` directory and launches a **second Claude instance** to review the changes and check for duplicate functionality.
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/myrepo/.claude/hooks/dedup_hook.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+```python
+# dedup_hook.py — simplified illustration
+import json, sys, subprocess
+
+data = json.load(sys.stdin)
+file_path = data.get("tool_input", {}).get("file_path", "")
+
+# Only run for files in the queries directory
+if "/queries/" not in file_path:
+    sys.exit(0)
+
+# Launch a second Claude instance to review the change
+result = subprocess.run(
+    ["claude", "-p",
+     f"Review this file for duplicate query logic: {file_path}. "
+     "If a similar query already exists elsewhere, report it."],
+    capture_output=True, text=True
+)
+
+if "duplicate" in result.stdout.lower():
+    print(result.stdout, file=sys.stderr)
+    sys.exit(2)  # tell Claude to remove the duplicate and reuse existing
+
+sys.exit(0)
+```
+
+**How it works:**
+1. Claude writes/edits a file in `./queries` → hook fires
+2. A second Claude instance reviews the new query against existing ones
+3. If a duplicate is found, the original Claude is told to remove it and reuse the existing function
+
+**Trade-offs to consider:**
+
+| | TypeScript hook | Query dedup hook |
+|--|----------------|-----------------|
+| Speed | Fast (compiler runs in seconds) | Slow (spawns a full Claude instance) |
+| Cost | Free | Uses API tokens per review |
+| Recommendation | Always on | Only on critical directories |
 
 [Back to top](#table-of-contents)
 
@@ -1360,28 +1927,62 @@ After setup, test by:
 
 ## Claude Code SDK
 
-The Claude Code SDK lets you build **custom agents** powered by Claude Code programmatically.
+The Claude Code SDK lets you run Claude Code **programmatically** from within your own applications and scripts. Available for TypeScript, Python, and via the CLI — it gives you the same Claude Code functionality you use at the terminal but integrated into larger workflows.
+
+> **Key insight:** The SDK runs the **exact same Claude Code** you already use. It has access to all the same tools and inherits all settings from Claude Code instances in the same directory. This makes it powerful for automation — you're not calling a stripped-down API, you're scripting the full agent.
 
 ### What it enables
 
 | Use case | Example |
 |----------|---------|
-| **Custom CLI tools** | Build a project-specific AI assistant |
-| **CI/CD integration** | Automated code fixes in your pipeline |
-| **Custom agents** | Multi-step workflows with custom logic |
-| **Batch operations** | Run Claude Code across multiple repos |
+| **Git hooks** | Automatically review code changes before commit |
+| **Build scripts** | Analyze and optimize code as part of a build |
+| **CI/CD integration** | Code quality checks in your pipeline |
+| **Custom helper commands** | Project-specific AI-powered maintenance tasks |
+| **Automated documentation** | Generate docs on file changes |
+| **Query dedup hook** | Launch a second Claude instance to review changes (see Hooks section) |
 
-### Basic usage
+### Basic usage (TypeScript)
 
-```javascript
-import { ClaudeCode } from '@anthropic-ai/claude-code-sdk';
+```typescript
+import { query } from "@anthropic-ai/claude-code";
 
-const claude = new ClaudeCode({
-  projectDir: '/path/to/project'
-});
+const prompt = "Look for duplicate queries in the ./src/queries dir";
 
-const result = await claude.run('Fix all TypeScript errors in src/');
-console.log(result);
+for await (const message of query({ prompt })) {
+  console.log(JSON.stringify(message, null, 2));
+}
+```
+
+When you run this, you see the raw conversation between your local Claude Code and the model, message by message. The final message contains Claude's complete response.
+
+### Permissions and tools
+
+By default, the SDK has **read-only permissions** — it can read files, search directories, and grep, but cannot write, edit, or create files.
+
+To enable write access, pass `allowedTools`:
+
+```typescript
+for await (const message of query({
+  prompt,
+  options: {
+    allowedTools: ["Edit"]
+  }
+})) {
+  console.log(JSON.stringify(message, null, 2));
+}
+```
+
+Alternatively, configure permissions in `.claude/settings.json` in your project directory for project-wide access — the SDK inherits those settings automatically.
+
+### Practical applications
+
+```
+Git hooks          → auto-review staged changes before commit
+Build scripts      → analyze and optimize code during builds
+Helper commands    → project-specific AI maintenance tasks
+Automated docs     → generate documentation on file changes
+Code quality       → CI/CD quality checks using full Claude Code
 ```
 
 [Back to top](#table-of-contents)
