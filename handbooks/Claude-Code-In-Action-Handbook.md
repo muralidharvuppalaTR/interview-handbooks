@@ -1530,17 +1530,37 @@ By default workflows run on `ubuntu-latest` (GitHub-hosted). But in enterprise s
 
 Register a Linux runner inside WSL2 on your Windows machine. Same machine = same network (no IP restriction). Linux = no bash/bun issues.
 
+**Critical: install the runner on native Linux filesystem, NOT on `/mnt/c/`**
+
+This is the most common mistake. The runner must live inside WSL2's Linux filesystem, not on the Windows C: drive mounted via `/mnt/c/`. Bun (the JS runtime used by `claude-code-action`) crashes with `directory mismatch` errors when working across the Windows/Linux filesystem boundary.
+
+```
+❌ Wrong: /mnt/c/Users/yourname/actions-runner/   ← Windows filesystem, causes bun crash
+✅ Correct: /home/yourname/actions-runner/          ← Native Linux filesystem
+```
+
 ```bash
-# Inside WSL terminal
-mkdir ~/actions-runner && cd ~/actions-runner
-curl -o actions-runner-linux-x64-2.333.1.tar.gz -L \
-  https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-linux-x64-2.333.1.tar.gz
-tar xzf ./actions-runner-linux-x64-2.333.1.tar.gz
+# Inside WSL terminal — use your Linux home directory
+mkdir -p /home/muralidhar/actions-runner
+cd /home/muralidhar/actions-runner
+
+# Check your Linux home if unsure
+echo $HOME
+
+# Browse it from Windows Explorer:
+# \\wsl$\Ubuntu\home\<username>\
+```
+
+Go to **GitHub repo → Settings → Actions → Runners → New self-hosted runner**, select **Linux**, copy the token. Then:
+
+```bash
+curl -o runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.334.0/actions-runner-linux-x64-2.334.0.tar.gz
+tar xzf ./runner.tar.gz
 ./config.sh --url https://github.com/YOUR_ORG/YOUR_REPO --token YOUR_TOKEN
 ./run.sh
 ```
 
-Go to **GitHub repo → Settings → Actions → Runners → New self-hosted runner**, select **Linux**, and copy the token shown. When asked for a runner name, give it a distinct name (e.g., `TR-1L0XML3-Linux`) so it coexists with any existing Windows runner.
+When prompted for runner name — press Enter for default or give it a distinct name (e.g., `TR-1L0XML3-Linux`).
 
 Then update your workflow:
 ```yaml
@@ -1555,34 +1575,77 @@ runs-on: [self-hosted, Linux]   # WSL2 — same machine IP, works with claude-co
 sudo apt-get install -y unzip
 ```
 
-Do this once on the WSL machine — it stays permanently and all future workflow runs will have it.
+**TR Zscaler SSL certificate setup (corporate network requirement):**
+
+TR's network uses Zscaler to intercept all HTTPS traffic and re-sign it with a TR certificate. WSL2 doesn't trust this by default, causing:
+```
+unable to get local issuer certificate
+```
+
+This affects both `curl` (downloading Claude Code binary) and `bun` (the action's JS runtime).
+
+**Step 1 — Extract the Zscaler intermediate CA cert** (not the server cert — you need the 2nd cert in the chain):
+
+```bash
+# Get the correct cert — the 2nd in the chain (Zscaler intermediate CA)
+echo | openssl s_client -connect api.anthropic.com:443 -showcerts 2>/dev/null | \
+  awk '/-----BEGIN CERTIFICATE-----/{n++} n==2{print} /-----END CERTIFICATE-----/ && n==2{exit}' \
+  > /home/muralidhar/zscaler-ca.crt
+
+# Verify it's the right one — should show CN=zs_ssl_intermediate_ca1
+openssl x509 -in /home/muralidhar/zscaler-ca.crt -noout -subject
+```
+
+> **Common mistake:** Extracting only the 1st cert gives you the server cert (`CN=api.anthropic.com`), not the CA. You need the 2nd cert.
+
+**Step 2 — Install system-wide and append to system bundle:**
+
+```bash
+sudo cp /home/muralidhar/zscaler-ca.crt /usr/local/share/ca-certificates/zscaler-ca.crt
+sudo update-ca-certificates
+
+# Append to system bundle (needed for bun)
+sudo bash -c 'cat /home/muralidhar/zscaler-ca.crt >> /etc/ssl/certs/ca-certificates.crt'
+```
+
+**Step 3 — Configure runner `.env`:**
+
+```bash
+cat > /home/muralidhar/actions-runner/.env << 'EOF'
+LANG=C.UTF-8
+NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+CURL_CA_BUNDLE=/home/muralidhar/zscaler-ca.crt
+SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+EOF
+```
+
+> **Why `NODE_EXTRA_CA_CERTS` points to full bundle:** Bun needs the full system bundle (all standard CAs + Zscaler CA appended). Pointing to just the Zscaler cert alone causes `unable to get issuer certificate` because bun can't verify the Zscaler CA itself.
+
+**Step 4 — Verify SSL works:**
+
+```bash
+curl -v https://api.anthropic.com 2>&1 | grep -E "SSL|verify"
+# Should show: SSL certificate verify ok.
+```
+
+> **Note on `ca-bundle.crt`:** If you have a `ca-bundle.crt` from IT, check its format first — it may be UTF-16 (Windows format) which OpenSSL can't parse. Convert it: `iconv -f UTF-16 -t UTF-8 ca-bundle.crt | sed 's/\r//' > ca-bundle-utf8.crt`. Check with: `file ca-bundle.crt` — should say `PEM certificate`, not `Unicode text, UTF-16`.
 
 **WSL proxy / IP restriction — use LiteLLM env vars instead:**
 
 If you have a LiteLLM proxy (common in enterprise), skip the proxy setup entirely and use the LiteLLM env vars approach (Option 5 above) — it's simpler and confirmed working. The `ANTHROPIC_BASE_URL` routes all requests through LiteLLM, bypassing the IP restriction entirely.
 
-If you don't have LiteLLM, you can try setting the corporate proxy in WSL:
-
-```bash
-# Step 1 — find the Windows proxy address
-reg.exe query "HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings" /v ProxyServer
-
-# Step 2 — set it in WSL permanently
-echo 'export https_proxy=http://<proxy>:<port>' >> ~/.bashrc
-echo 'export http_proxy=http://<proxy>:<port>' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Then restart the runner.
-
 **Runner management:**
 
 ```bash
 # Start the runner
-cd /opt/actions-runner && ./run.sh
+cd /home/muralidhar/actions-runner && ./run.sh
+
+# Run as background service (auto-starts with WSL)
+sudo ./svc.sh install
+sudo ./svc.sh start
 
 # Clear stale action cache (if you get "directory mismatch" errors)
-sudo rm -rf /opt/actions-runner/_work/_actions/anthropics
+sudo rm -rf /home/muralidhar/actions-runner/_work/_actions/anthropics
 
 # OAuth token location (in WSL)
 cat ~/.claude/credentials.json   # claudeAiOauth.accessToken is the value for CLAUDE_CODE_OAUTH_TOKEN secret
@@ -1594,7 +1657,8 @@ cat ~/.claude/credentials.json   # claudeAiOauth.accessToken is the value for CL
 
 | Runner | Works? | Failure point | Notes |
 |--------|--------|---------------|-------|
-| `[self-hosted, Linux]` (WSL2) | ✅ | — | Linux + TR network + LiteLLM reachable |
+| `[self-hosted, Linux]` WSL2 on `/home/` | ✅ | — | Native Linux filesystem + TR network + LiteLLM reachable |
+| `[self-hosted, Linux]` WSL2 on `/mnt/c/` | ❌ | `directory mismatch` bun crash | Runner on Windows filesystem — move to `/home/` to fix |
 | `ubuntu-latest` | ❌ | LiteLLM unreachable | Outside TR network — can't reach internal LiteLLM proxy |
 | `macos-latest` | ❌ | LiteLLM unreachable | Outside TR network — same reason as ubuntu-latest |
 | `[self-hosted, Windows]` | ❌ | bash path bug → Claude Code CLI install blocks Windows | WSL bash used instead of Git bash; even if fixed, CLI installer rejects Windows |
@@ -1675,6 +1739,187 @@ steps:
         }
       }
 ```
+
+**GitHub CLI (`gh`) must be installed on self-hosted runners:**
+
+This is the most critical dependency — Claude's entire review workflow depends on `gh pr diff` and `gh pr view`. GitHub-hosted runners (`ubuntu-latest`) have `gh` pre-installed. Self-hosted WSL2 runners do not.
+
+Without `gh`:
+```
+/bin/bash: line 1: gh: command not found
+```
+
+Claude tries `gh pr diff` → gets "command not found" → spends all 15 turns trying alternatives → hits max turns without posting any review.
+
+Fix:
+```bash
+sudo apt-get update && sudo apt-get install -y gh
+gh auth login   # authenticate once — stored in ~/.config/gh/hosts.yml
+```
+
+Verify:
+```bash
+gh auth status
+# github.com — Logged in to github.com account yourname
+# Token scopes: 'read:org', 'repo', 'workflow'
+```
+
+Required token scopes: `repo`, `read:org`, `workflow`. Generate at `https://github.com/settings/tokens` and authenticate with:
+```bash
+echo "ghp_your_token_here" | gh auth login --with-token
+```
+
+**`zstd` must be installed on self-hosted runners:**
+
+`actions/cache@v4` requires `zstd` for cache compression. GitHub-hosted runners have it pre-installed. Self-hosted WSL2 runners may not.
+
+Without `zstd`, the cache step crashes with a confusing ENOTDIR error:
+```
+Unexpected error attempting to determine if executable file exists
+'/mnt/c/Program Files/.../devenv.exe/zstd': Error: ENOTDIR: not a directory
+Cache not found for input keys: claude-code-Linux-v2.1.119
+```
+
+**Why ENOTDIR?** Windows PATH entries bleed into WSL2. `actions/cache` scans every `$PATH` entry looking for `zstd`. When it hits a bad PATH entry like `/mnt/c/.../devenv.exe` (an `.exe` file listed directly as a PATH entry instead of its parent folder), it tries `stat('devenv.exe/zstd')` — treating a file as a directory — and crashes. It never finishes the scan.
+
+Fix:
+```bash
+sudo apt-get install -y zstd
+# Verify: which zstd → /usr/bin/zstd
+```
+
+Once `zstd` is at `/usr/bin/zstd`, the scan finds it early in PATH before reaching the bad Windows entries — no crash.
+
+**Caching Claude Code binary (self-hosted runners only):**
+
+On self-hosted runners, `claude-code-action` downloads and installs the Claude Code binary on every job run. On corporate networks with Zscaler or similar SSL inspection proxies, this download takes ~23 minutes. Cache it to skip the download on subsequent runs:
+
+```yaml
+- name: Cache Claude Code binary
+  id: cache-claude
+  uses: actions/cache@v4
+  with:
+    path: |
+      ~/.local/bin/claude
+      ~/.local/share/claude
+    key: claude-code-${{ runner.os }}-v2.1.119
+    save-always: true
+```
+
+**Why cache both paths?** `~/.local/bin/claude` is just a **symlink** — it points into `~/.local/share/claude/versions/<version>/`. Caching only the symlink and restoring it leaves the target missing, so the binary is broken. You must cache both.
+
+**Why `save-always: true`?** By default `actions/cache` only saves when the job **succeeds**. The `Post Cache` step (which does the saving) is skipped when the main step fails. Since the review job often fails during debugging (max turns, `gh` not found, etc.), the cache never gets saved without `save-always: true`.
+
+Add this step **before** the `claude-code-action` step. First run still downloads (cold cache). Every subsequent run restores from cache — install step completes instantly.
+
+> **Note:** This only helps on self-hosted runners where the binary persists between runs. GitHub-hosted runners (`ubuntu-latest`) spin up fresh VMs every run — cache is restored from GitHub's cache storage, so it still helps there too but the download is already fast on GitHub-hosted runners.
+
+**Seeding the cache without waiting for a successful run:**
+
+If the Claude binary is already installed on your runner (`which claude` returns a path), you can seed the GitHub Actions cache immediately using a `workflow_dispatch` workflow — no need to wait for a successful review run:
+
+```yaml
+name: Prime Claude Cache
+
+on:
+  workflow_dispatch:
+
+jobs:
+  prime-cache:
+    runs-on: [self-hosted, Linux]
+    steps:
+      - name: Save cache
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.local/bin/claude
+            ~/.local/share/claude
+          key: claude-code-Linux-v2.1.119
+```
+
+Go to **Actions → Prime Claude Cache → Run workflow**. Completes in seconds — uploads the existing binary to GitHub's cache store. All future review runs skip the download immediately.
+
+**Where does `v2.1.119` come from?**
+
+The version is hardcoded inside `claude-code-action`'s install script:
+
+```bash
+# Inside anthropics/claude-code-action — src/install.sh (or similar)
+CLAUDE_CODE_VERSION="2.1.119"
+```
+
+When Anthropic bumps this to `2.1.120` or higher, the cache key `claude-code-Linux-v2.1.119` won't match — GitHub sees a cache miss and downloads the new version automatically. Update the cache key version to match.
+
+To avoid manually tracking the version, make the cache key dynamic:
+
+```yaml
+- name: Get Claude Code version
+  id: claude-version
+  run: echo "version=$(claude --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' || echo 'unknown')" >> $GITHUB_OUTPUT
+
+- name: Cache Claude Code binary
+  uses: actions/cache@v4
+  with:
+    path: ~/.local/bin/claude
+    key: claude-code-${{ runner.os }}-${{ steps.claude-version.outputs.version }}
+```
+
+**Tool guidance in prompt — prevent permission denial loops:**
+
+By default Claude tries any tool it thinks might help. In GitHub Actions, only tools listed in `--allowedTools` are permitted — anything else is denied. Each denial wastes a turn. On a `--max-turns 15` budget, 15 denials means Claude runs out of turns without finishing the review.
+
+Fix: tell Claude upfront which tools are available so it doesn't try denied ones:
+
+```yaml
+prompt: |
+  You are a senior .NET code reviewer.
+
+  TOOLS: Use Read, Glob, Grep for local files and Bash for gh/git commands only.
+  Do NOT attempt WebFetch, Agent, Edit, Write, or any other tools — they will be
+  denied and waste turns.
+```
+
+This instruction at the top of the prompt prevents the denial loop entirely. Confirmed: without it, `permission_denials_count: 15` and `error_max_turns` at 15 turns. With it, `permission_denials_count: 0`.
+
+**How permission denials exhaust `--max-turns`:**
+
+Each denied tool call counts as a turn. Claude tries a tool → gets denied → uses another turn to try something else → gets denied again. On a `--max-turns 15` budget this can mean Claude never finishes the actual review:
+
+```
+Turn 1  → Claude tries WebFetch → denied
+Turn 2  → Claude tries Agent   → denied
+Turn 3  → Claude tries Edit    → denied
+Turn 4  → Claude tries Write   → denied
+...
+Turn 15 → max turns hit → job fails, no review posted
+```
+
+With tool guidance in the prompt, Claude skips denied tools entirely and spends all turns on actual review work.
+
+**Inline comment validation failures — `could not be resolved`:**
+
+When Claude posts an inline comment, GitHub only accepts comments on lines that are **part of the PR diff** (lines prefixed with `+` or `-` in `gh pr diff`). If Claude tries to comment on a line that exists in the file but wasn't changed in this PR, GitHub rejects it:
+
+```
+Error: Validation Failed: pull_request_review_thread.path "could not be resolved"
+```
+
+Claude then retries the failed comment, wasting more turns until it hits `--max-turns`.
+
+**Why this happens:** Claude reads the full file with `Read` and finds an issue on line 142. That line exists in the file but wasn't changed in this PR. Claude doesn't check whether line 142 is in the diff before attempting the inline comment.
+
+**Fix — add to your prompt:**
+
+```yaml
+prompt: |
+  ## Inline comment rules
+  - Always set `confirmed: true` when calling mcp__github_inline_comment__create_inline_comment
+  - Only post inline comments on lines that appear in the PR diff — lines prefixed with + or -
+  - If you are not certain a line is in the diff, include the finding in gh pr comment instead
+  - Never retry a failed inline comment — move it to the summary comment
+```
+
+**`confirmed: true` parameter:** This is a parameter on the `mcp__github_inline_comment__create_inline_comment` tool that tells Claude to be certain the line exists in the diff before posting. Without it, Claude posts speculatively and fails. With it, Claude validates before attempting — reducing failures significantly.
 
 **Tool permissions** — in GitHub Actions, all allowed tools must be listed explicitly. Use `claude_args: --allowedTools` (the `allowed_tools` input is **deprecated** since v1 and will be ignored with a warning):
 ```yaml
@@ -1762,6 +2007,37 @@ Result: inline comments on specific lines + one summary comment for overall find
       Finding format: [blocker] / [suggestion] / [nit]
       If no issues: post "Clean review — no issues found."
 ```
+
+**How Claude extends your finding format labels:**
+
+You define the severity labels in the prompt — Claude follows them and adds its own classification labels on top:
+
+```yaml
+## Finding format
+- `[blocker]` — Must fix before merge (bugs, security issues, data corruption)
+- `[suggestion]` — Recommended improvement
+- `[nit]` — Minor stylistic preference
+```
+
+Claude picks one severity label per finding, then often adds a second label from its own judgment:
+
+| Label | Who adds it | Meaning |
+|-------|------------|---------|
+| `[blocker]` | You (prompt) | Must fix before merge |
+| `[suggestion]` | You (prompt) | Recommended improvement |
+| `[nit]` | You (prompt) | Minor stylistic preference |
+| `[auto-fixable]` | Claude (self-generated) | The fix is mechanical and straightforward |
+| `[needs-discussion]` | Claude (self-generated) | The fix requires a team decision or trade-off |
+
+Example from a real review:
+```
+[blocker] [needs-discussion] XSS rule is backwards — bypassSecurityTrustHtml disables sanitization
+[blocker] [auto-fixable] File is truncated — section has no body
+[suggestion] [auto-fixable] Pattern appsettings.*.json doesn't match appsettings.json
+[suggestion] [needs-discussion] DROP TABLE deny rules are ineffective as bash patterns
+```
+
+You don't need to define `[auto-fixable]` or `[needs-discussion]` — Claude infers them from the nature of the finding. If you want to control the label vocabulary, add them explicitly to the prompt format section.
 
 **Why `gh pr comment` instead of built-in action mechanisms?**
 
@@ -1901,6 +2177,10 @@ show_full_output: true
 | **`permission_denials_count: 1` but no PR comment** | Claude tried to use a tool not in its allowed list — review ran but output was blocked | Add `show_full_output: true` to see which tool was denied, then add it to `--allowedTools` in `claude_args` |
 | **`"No buffered inline comments"`** | Claude ran but couldn't post output — missing `Bash(gh pr comment:*)` in allowed tools | Add `Bash(gh pr comment:*)` to `claude_args: --allowedTools` and include `gh pr comment` in the prompt instructions |
 | **`Warning: Unexpected input(s) 'allowed_tools'`** | `allowed_tools` is a deprecated action input in v1 — silently ignored | Replace with `claude_args: "--allowedTools Read,Bash(gh pr comment:*),..."` |
+| **`gh: command not found`** | `gh` CLI not installed on self-hosted runner — Claude's entire review workflow fails immediately | `sudo apt-get install -y gh && gh auth login` — GitHub-hosted runners have `gh` pre-installed; self-hosted runners do not |
+| **`ENOTDIR: not a directory` on `actions/cache`** | Windows PATH entries bleeding into WSL2 — bad `.exe` entries listed directly as PATH (not their parent folder) cause `zstd` scan to crash | `sudo apt-get install -y zstd` — once found at `/usr/bin/zstd`, scan stops before reaching bad Windows PATH entries |
+| **`Post Cache` step skipped — cache never saved** | `actions/cache` only saves on job success by default — when review fails, the Post Cache save step is skipped | Add `save-always: true` to the cache step so it saves regardless of job outcome |
+| **`--max-turns 15` hits before review completes** | 15 turns is too low for a real PR review — diff fetch + file reads + posting comment easily uses 10+ turns | Increase to `--max-turns 25` or `--max-turns 30` for real PR reviews |
 
 #### Uninstalling
 
